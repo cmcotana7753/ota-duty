@@ -55,8 +55,17 @@ export default function OtaDutyApp() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
 
-  // 1. 全自動計算預設目標月份 (每月1號開更，22號23:59截更)
-  const defaultConfig = useMemo(() => {
+  // 1. 全自動計算預設目標月份 (改為 State + useEffect，避免 Next.js SSR / Prerender 報錯)
+  const [defaultConfig, setDefaultConfig] = useState({
+    targetYear: 2026,
+    targetMonthNum: 11,
+    isLocked: false,
+    monthStr: '2026-11'
+  });
+
+  const [viewMonthStr, setViewMonthStr] = useState('2026-11');
+
+  useEffect(() => {
     const today = new Date();
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth(); // 0-11
@@ -69,11 +78,10 @@ export default function OtaDutyApp() {
     const isLocked = currentDate > 22;
     const monthStr = `${targetYear}-${targetMonthNum < 10 ? '0' + targetMonthNum : targetMonthNum}`;
 
-    return { targetYear, targetMonthNum, isLocked, monthStr };
+    setDefaultConfig({ targetYear, targetMonthNum, isLocked, monthStr });
+    setViewMonthStr(monthStr);
+    setSelectedDate(`${monthStr}-01`);
   }, []);
-
-  // 主管可自由選擇檢視的月份 (預設為當前目標月份)
-  const [viewMonthStr, setViewMonthStr] = useState(defaultConfig.monthStr);
 
   // 動態計算當前選定檢視月份的詳細天數資訊
   const activeMonthConfig = useMemo(() => {
