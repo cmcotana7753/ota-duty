@@ -15,6 +15,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "一切盡在呀SIR手中 - OTA Duty Request",
   description: "明愛醫院手術室更次申請系統 Caritas Medical Centre",
+  icons: {
+    icon: '/icon.png',
+    apple: '/icon.png',
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
