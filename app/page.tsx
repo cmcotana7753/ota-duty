@@ -294,41 +294,124 @@ export default function OtaDutyApp() {
       <div className="max-w-[98%] mx-auto py-6">
         
         {/* 版面 1：同事意願申請 */}
-        {activeTab === 'board1' && (
-          <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-            <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-emerald-600" /> 同事更期申請 (Staff Request)
-            </h2>
-            <form onSubmit={handleSubmitRequest} className="space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">選擇您的姓名</label>
-                <select value={selectedStaff} onChange={(e) => setSelectedStaff(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white">
-                  {STAFF_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+       {/* 版面 1：同事意願申請 + 取消申請功能 */}
+{activeTab === 'board1' && (
+  <div className="max-w-3xl mx-auto space-y-6">
+    {/* 1. 提交申請 Form */}
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sm:p-8">
+      <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
+        <Calendar className="w-5 h-5 text-emerald-600" /> 同事更次意願請求 (Staff Request)
+      </h2>
+      <form onSubmit={handleSubmitRequest} className="space-y-5">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">選擇您的姓名</label>
+          <select 
+            value={selectedStaff} 
+            onChange={(e) => setSelectedStaff(e.target.value)} 
+            className="w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white font-medium"
+          >
+            {STAFF_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">選擇日期</label>
+          <input 
+            type="date" 
+            value={selectedDate} 
+            min="2026-10-01" 
+            max="2026-10-31" 
+            onChange={(e) => setSelectedDate(e.target.value)} 
+            className="w-full px-4 py-2.5 rounded-lg border border-slate-300" 
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">選擇 Duty Pattern</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {DUTY_PATTERNS.map(p => (
+              <div 
+                key={p.id} 
+                onClick={() => setSelectedPattern(p.id)} 
+                className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                  selectedPattern === p.id ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-500' : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className="font-semibold text-sm text-slate-900">{p.id}</div>
+                <div className="text-xs text-slate-500">{p.desc}</div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">選擇日期</label>
-                <input type="date" value={selectedDate} min="2026-10-01" max="2026-10-31" onChange={(e) => setSelectedDate(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-slate-300" />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">選擇 Duty Pattern</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {DUTY_PATTERNS.map(p => (
-                    <div key={p.id} onClick={() => setSelectedPattern(p.id)} className={`p-3 rounded-lg border cursor-pointer ${selectedPattern === p.id ? 'border-emerald-600 bg-emerald-50' : 'border-slate-200'}`}>
-                      <div className="font-semibold text-sm">{p.id}</div>
-                      <div className="text-xs text-slate-500">{p.desc}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 rounded-lg flex items-center justify-center gap-2">
-                <Send className="w-4 h-4" /> 提交 Request
-              </button>
-            </form>
-            {warningMsg && <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />{warningMsg}</div>}
-            {successMsg && <div className="mt-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />{successMsg}</div>}
+            ))}
           </div>
-        )}
+        </div>
+
+        <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 rounded-lg flex items-center justify-center gap-2 shadow-sm">
+          <Send className="w-4 h-4" /> 提交 Request
+        </button>
+      </form>
+
+      {warningMsg && <div className="mt-4 p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />{warningMsg}</div>}
+      {successMsg && <div className="mt-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex items-center gap-2"><CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />{successMsg}</div>}
+    </div>
+
+    {/* 2. 已提交 Request 列表與取消申請 */}
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sm:p-8">
+      <h3 className="text-base font-bold text-slate-900 mb-3 flex items-center justify-between">
+        <span className="flex items-center gap-2">📋 [{selectedStaff}] 已提交的更次申請</span>
+        <span className="text-xs font-normal text-slate-500">
+          共 {requests.filter(r => r.staff_name === selectedStaff).length} 項申請
+        </span>
+      </h3>
+
+      {requests.filter(r => r.staff_name === selectedStaff).length === 0 ? (
+        <p className="text-xs text-slate-400 py-4 text-center bg-slate-50 rounded-lg border border-dashed border-slate-200">
+          目前沒有任何已提交的更次申請。
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {requests
+            .filter(r => r.staff_name === selectedStaff)
+            .map((req, idx) => (
+              <div key={idx} className="flex justify-between items-center p-3 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-all">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-md">
+                    {req.request_date}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-800">
+                    {req.pattern}
+                  </span>
+                </div>
+                <button
+                  onClick={async () => {
+                    if (confirm(`確定要取消 ${req.request_date} 的 [${req.pattern}] 申請嗎？`)) {
+                      // 1. 從 staff_requests 刪除
+                      await supabase
+                        .from('staff_requests')
+                        .delete()
+                        .eq('staff_name', req.staff_name)
+                        .eq('request_date', req.request_date);
+
+                      // 2. 將 duty_schedules 重置為 O (休假)
+                      await supabase
+                        .from('duty_schedules')
+                        .upsert([
+                          { staff_name: req.staff_name, duty_date: req.request_date, pattern: 'O' }
+                        ], { onConflict: 'staff_name,duty_date' });
+
+                      setSuccessMsg(`🗑️ 已成功取消 ${req.request_date} 的更次申請！`);
+                      fetchData();
+                    }
+                  }}
+                  className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-medium transition-all flex items-center gap-1"
+                >
+                  🗑️ 取消申請
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  </div>
+)}
 
         {/* 版面：預計更表 */}
         {activeTab === 'preview' && (
