@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Users, Clock, AlertTriangle, Send, CheckCircle2, Shield, BarChart3, Edit3, Lock, Unlock, LogOut } from 'lucide-react';
+import { Calendar, Users, Clock, AlertTriangle, Send, CheckCircle2, Shield, BarChart3, Edit3, Lock, Unlock, LogOut, Eye } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 const STAFF_LIST = ['Cheuk Ho', 'Dr. Wong', 'Nurse Chan', 'Nurse Lee', 'Nurse Mary'];
@@ -10,12 +10,13 @@ const DUTY_PATTERNS = [
   { id: '0800-1648', label: '0800-1648 (日班)', hours: 8.8, desc: '平日>=6人, 假期/週末3人' },
   { id: '1000-1848', label: '1000-1848 (中班)', hours: 8.8, desc: '每日限 1 人' },
   { id: '1300-2148', label: '1300-2148 (晚班)', hours: 8.8, desc: '平日2人, 假期/週末1人' },
-  { id: 'AN', label: 'AN (跨日更)', hours: 16.1, desc: 'A:0800-1418 & N:2130-0848 (每日限1人)' },
+  { id: 'AN', label: 'AN (跨日更)', hours: 16.1, desc: '每日限 1 人' },
   { id: 'OFF', label: 'OFF (休假)', hours: 0, desc: '休假' },
 ];
 
 export default function OtaDutyApp() {
-  const [activeTab, setActiveTab] = useState<'board1' | 'board2' | 'board3'>('board1');
+  // 新增 'preview' 版面
+  const [activeTab, setActiveTab] = useState<'board1' | 'preview' | 'board2' | 'board3'>('board1');
   
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -30,7 +31,6 @@ export default function OtaDutyApp() {
   const [successMsg, setSuccessMsg] = useState('');
   const [warningMsg, setWarningMsg] = useState('');
 
-  // 10 月共 31 天 (1 至 31 日)
   const daysInMonth = Array.from({ length: 31 }, (_, i) => i + 1);
 
   useEffect(() => {
@@ -87,18 +87,26 @@ export default function OtaDutyApp() {
     ], { onConflict: 'staff_name,duty_date' });
   };
 
-  // 計算特定同事成個月嘅總工時
   const calculateTotalHours = (staff: string) => {
     let total = 0;
     daysInMonth.forEach(day => {
       const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
       const patternId = matrixShifts[`${staff}-${dateStr}`] || 'OFF';
       const patternObj = DUTY_PATTERNS.find(p => p.id === patternId);
-      if (patternObj) {
-        total += patternObj.hours;
-      }
+      if (patternObj) total += patternObj.hours;
     });
     return Math.round(total * 10) / 10;
+  };
+
+  // 計算指定日期各種 Pattern 的人數，用作防撞期提示
+  const getDayPatternCount = (dateStr: string, patternId: string) => {
+    let count = 0;
+    STAFF_LIST.forEach(staff => {
+      if (matrixShifts[`${staff}-${dateStr}`] === patternId) {
+        count++;
+      }
+    });
+    return count;
   };
 
   const handleAdminLogin = (e: React.FormEvent) => {
@@ -126,33 +134,34 @@ export default function OtaDutyApp() {
           </div>
 
           <div className="flex items-center gap-3">
-            {!isAdmin ? (
-              <button
-                onClick={() => setShowLoginModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-medium transition-all shadow-sm"
-              >
-                <Lock className="w-4 h-4 text-emerald-400" /> 主管登入 (Admin Login)
+            {/* 公開分頁：申請更次 & 預計更表 */}
+            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button onClick={() => setActiveTab('board1')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board1' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
+                📝 申請更次
               </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <button onClick={() => setActiveTab('board1')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board1' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
-                    申請更次
-                  </button>
+              <button onClick={() => setActiveTab('preview')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'preview' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
+                👀 預計更表 (防撞期)
+              </button>
+              {isAdmin && (
+                <>
                   <button onClick={() => setActiveTab('board2')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board2' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
-                    主管總覽與工時
+                    📊 主管總覽與工時
                   </button>
                   <button onClick={() => setActiveTab('board3')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board3' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
-                    統計與透明度
+                    📈 統計與透明度
                   </button>
-                </div>
-                <button
-                  onClick={() => { setIsAdmin(false); setActiveTab('board1'); }}
-                  className="flex items-center gap-1 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium transition-all"
-                >
-                  <LogOut className="w-3.5 h-3.5" /> 登出
-                </button>
-              </div>
+                </>
+              )}
+            </div>
+
+            {!isAdmin ? (
+              <button onClick={() => setShowLoginModal(true)} className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium shadow-sm">
+                <Lock className="w-3.5 h-3.5 text-emerald-400" /> 主管登入
+              </button>
+            ) : (
+              <button onClick={() => { setIsAdmin(false); setActiveTab('board1'); }} className="flex items-center gap-1 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium">
+                <LogOut className="w-3.5 h-3.5" /> 登出
+              </button>
             )}
           </div>
         </div>
@@ -168,7 +177,6 @@ export default function OtaDutyApp() {
               </h3>
               <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
-            <p className="text-sm text-slate-500 mb-4">請輸入主管密碼以解鎖排班總覽與 176 小時工時計算。（預設密碼：admin123）</p>
             <form onSubmit={handleAdminLogin} className="space-y-4">
               <input
                 type="password"
@@ -187,7 +195,7 @@ export default function OtaDutyApp() {
         </div>
       )}
 
-      {/* 主內容區域 */}
+      {/* 內容區塊 */}
       <div className="max-w-[98%] mx-auto py-6">
         
         {/* 版面 1：同事意願申請 */}
@@ -227,7 +235,80 @@ export default function OtaDutyApp() {
           </div>
         )}
 
-        {/* 版面 2：主管 Excel 全月矩陣 (1-31日) 與 176 小時工時計算 */}
+        {/* 新增：版面「預計更表 (Preview Schedule)」供全體同事即時檢視與防撞期 */}
+        {activeTab === 'preview' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-emerald-600" /> 預計更表與即時撞期監控 (Public Preview)
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">同事可在此即時查看大家已登記的更次。系統會對中班/AN等設有上限的更次進行超額預警，避免多人撞期。</p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 border-b">
+                      <th className="p-3 font-bold min-w-[130px] sticky left-0 bg-slate-100 z-10 border-r shadow-sm">員工姓名</th>
+                      {daysInMonth.map(day => (
+                        <th key={day} className="p-2 text-center min-w-[95px] border-l font-semibold">
+                          10/{day}
+                        </th>
+                      ))}
+                      <th className="p-3 text-center font-bold min-w-[140px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">
+                        全月預計工時
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {STAFF_LIST.map(staff => {
+                      const totalHrs = calculateTotalHours(staff);
+                      return (
+                        <tr key={staff} className="hover:bg-slate-50">
+                          <td className="p-3 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm">
+                            {staff}
+                          </td>
+                          {daysInMonth.map(day => {
+                            const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
+                            const currentVal = matrixShifts[`${staff}-${dateStr}`] || 'OFF';
+                            
+                            // 防撞期檢查：檢查當日 AN 或 1000-1848 是否超額（限 1 人）
+                            const isAnOver = currentVal === 'AN' && getDayPatternCount(dateStr, 'AN') > 1;
+                            const isMidOver = currentVal === '1000-1848' && getDayPatternCount(dateStr, '1000-1848') > 1;
+                            const hasWarning = isAnOver || isMidOver;
+
+                            return (
+                              <td key={day} className={`p-1 border-l text-center ${hasWarning ? 'bg-rose-50' : ''}`}>
+                                <div className={`p-1.5 text-[11px] font-semibold rounded ${
+                                  currentVal === '0800-1648' ? 'bg-emerald-50 text-emerald-800' :
+                                  currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800' :
+                                  currentVal === '1300-2148' ? 'bg-amber-50 text-amber-800' :
+                                  currentVal === 'AN' ? 'bg-purple-50 text-purple-800' :
+                                  'bg-slate-50 text-slate-400'
+                                }`}>
+                                  {currentVal}
+                                  {hasWarning && <span className="block text-[9px] text-rose-600 font-bold">⚠️ 撞期</span>}
+                                </div>
+                              </td>
+                            );
+                          })}
+                          <td className="p-3 text-center font-bold text-slate-700 sticky right-0 bg-white z-10 border-l shadow-sm">
+                            {totalHrs.toFixed(1)} hrs
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 版面 2：主管 Excel 全月矩陣 */}
         {activeTab === 'board2' && isAdmin && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
@@ -293,7 +374,6 @@ export default function OtaDutyApp() {
                             );
                           })}
                           
-                          {/* 月總工時與合規狀態欄 */}
                           <td className="p-3 text-center sticky right-0 bg-white z-10 border-l shadow-sm">
                             <div className={`px-2 py-1 rounded-md font-bold text-xs ${
                               isExact ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
