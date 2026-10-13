@@ -5,6 +5,7 @@ import { Calendar, Users, Clock, AlertTriangle, Send, CheckCircle2, Shield, BarC
 import { supabase } from './lib/supabase';
 
 const STAFF_LIST = [
+  'SAMPLE',
   'Tong Yiu Bun',
   'Ng Wai Hung Samuel',
   'Chan Kai Ming',
@@ -225,7 +226,7 @@ export default function OtaDutyApp() {
         <div className="max-w-[98%] mx-auto px-4 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Shield className="w-6 h-6 text-emerald-600" /> 麻醉助理日常更期管理系統
+              <Shield className="w-6 h-6 text-emerald-600" /> 麻醉助理日常之一切盡在呀SIR手中
             </h1>
             <p className="text-xs text-slate-500">Caritas Medical Centre - Operating Theatre</p>
           </div>
