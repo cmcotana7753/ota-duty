@@ -66,22 +66,33 @@ export default function OtaDutyApp() {
   const [viewMonthStr, setViewMonthStr] = useState('2026-11');
 
   useEffect(() => {
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth(); // 0-11
-    const currentDate = today.getDate();
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth(); // 0-11
+  const currentDate = today.getDate();
 
-    const targetDateObj = new Date(currentYear, currentMonth + 1, 1);
-    const targetYear = targetDateObj.getFullYear();
-    const targetMonthNum = targetDateObj.getMonth() + 1;
+  const targetDateObj = new Date(currentYear, currentMonth + 1, 1);
+  const targetYear = targetDateObj.getFullYear();
+  const targetMonthNum = targetDateObj.getMonth() + 1;
 
-    const isLocked = currentDate > 22;
-    const monthStr = `${targetYear}-${targetMonthNum < 10 ? '0' + targetMonthNum : targetMonthNum}`;
+  const isLocked = currentDate > 22;
+  const monthStr = `${targetYear}-${targetMonthNum < 10 ? '0' + targetMonthNum : targetMonthNum}`;
 
-    setDefaultConfig({ targetYear, targetMonthNum, isLocked, monthStr });
-    setViewMonthStr(monthStr);
-    setSelectedDate(`${monthStr}-01`);
-  }, []);
+  setDefaultConfig({ targetYear, targetMonthNum, isLocked, monthStr });
+  setViewMonthStr(monthStr);
+  setSelectedDate(`${monthStr}-01`);
+
+  // 生成歷史 12 個月選單 (100% 安全，避開 Vercel Build Prerender 錯誤)
+  const options = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() + 1 - i, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth() + 1;
+    const str = `${y}-${m < 10 ? '0' + m : m}`;
+    options.push({ label: `${y} 年 ${m} 月`, value: str });
+  }
+  setHistoryMonthOptions(options);
+}, []);
 
   // 動態計算當前選定檢視月份的詳細天數資訊
   const activeMonthConfig = useMemo(() => {
@@ -91,19 +102,7 @@ export default function OtaDutyApp() {
     return { year: y, monthNum: m, daysInMonth, daysArray, monthStr: viewMonthStr };
   }, [viewMonthStr]);
 
-  // 生成過去 12 個月供主管選擇的選單清單
-  const historyMonthOptions = useMemo(() => {
-    const options = [];
-    const today = new Date();
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(today.getFullYear(), today.getMonth() + 1 - i, 1);
-      const y = d.getFullYear();
-      const m = d.getMonth() + 1;
-      const str = `${y}-${m < 10 ? '0' + m : m}`;
-      options.push({ label: `${y} 年 ${m} 月`, value: str });
-    }
-    return options;
-  }, []);
+ const [historyMonthOptions, setHistoryMonthOptions] = useState<{ label: string; value: string }[]>([]);
 
   // 預設 state
   const [selectedStaff, setSelectedStaff] = useState('');
