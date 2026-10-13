@@ -2,22 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import { Calendar, Users, Clock, AlertTriangle, Send, CheckCircle2, Shield, BarChart3, Edit3, Lock, Unlock, LogOut } from 'lucide-react';
-import { supabase } from '@/app/lib/supabase';
+import { supabase } from './lib/supabase';
 
 const STAFF_LIST = ['Cheuk Ho', 'Dr. Wong', 'Nurse Chan', 'Nurse Lee', 'Nurse Mary'];
 
 const DUTY_PATTERNS = [
-  { id: '0800-1648', label: '0800-1648 (A)', desc: '平日不少於6人, 假期/週末3人' },
-  { id: '1000-1848', label: '1000-1848 (10點)', desc: '每日限 1 人' },
-  { id: '1300-2148', label: '1300-2148 (P)', desc: '平日2人, 假期/週末1人' },
-  { id: 'AN', label: 'AN (AN)', desc: 'A:0800-1418 & N:2130-0848 (每日限1人)' },
-  { id: 'OFF', label: 'OFF (休假)', desc: '休假' },
+  { id: '0800-1648', label: '0800-1648 (日班)', hours: 8.8, desc: '平日>=6人, 假期/週末3人' },
+  { id: '1000-1848', label: '1000-1848 (中班)', hours: 8.8, desc: '每日限 1 人' },
+  { id: '1300-2148', label: '1300-2148 (晚班)', hours: 8.8, desc: '平日2人, 假期/週末1人' },
+  { id: 'AN', label: 'AN (跨日更)', hours: 16.1, desc: 'A:0800-1418 & N:2130-0848 (每日限1人)' },
+  { id: 'OFF', label: 'OFF (休假)', hours: 0, desc: '休假' },
 ];
 
 export default function OtaDutyApp() {
   const [activeTab, setActiveTab] = useState<'board1' | 'board2' | 'board3'>('board1');
   
-  // 登入狀態管理
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -31,7 +30,8 @@ export default function OtaDutyApp() {
   const [successMsg, setSuccessMsg] = useState('');
   const [warningMsg, setWarningMsg] = useState('');
 
-  const daysInMonth = Array.from({ length: 15 }, (_, i) => i + 1);
+  // 10 月共 31 天 (1 至 31 日)
+  const daysInMonth = Array.from({ length: 31 }, (_, i) => i + 1);
 
   useEffect(() => {
     fetchData();
@@ -58,7 +58,7 @@ export default function OtaDutyApp() {
 
     const userReqCount = requests.filter(r => r.staff_name === selectedStaff).length + 1;
     if (userReqCount > 4) {
-      setWarningMsg(`⚠️ 提醒：${selectedStaff} 本週的更次請求次數已達 ${userReqCount} 次（超過 4 次建議頻率），請留意！`);
+      setWarningMsg(`⚠️ 提醒：${selectedStaff} 本月更次請求已達 ${userReqCount} 次！`);
     }
 
     const { error: reqError } = await supabase.from('staff_requests').insert([
@@ -87,14 +87,27 @@ export default function OtaDutyApp() {
     ], { onConflict: 'staff_name,duty_date' });
   };
 
+  // 計算特定同事成個月嘅總工時
+  const calculateTotalHours = (staff: string) => {
+    let total = 0;
+    daysInMonth.forEach(day => {
+      const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
+      const patternId = matrixShifts[`${staff}-${dateStr}`] || 'OFF';
+      const patternObj = DUTY_PATTERNS.find(p => p.id === patternId);
+      if (patternObj) {
+        total += patternObj.hours;
+      }
+    });
+    return Math.round(total * 10) / 10;
+  };
+
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // 預設主管密碼為 admin123 (你可以隨時修改)
-    if (adminPassword === 'SJam_2823') {
+    if (adminPassword === 'admin123') {
       setIsAdmin(true);
       setShowLoginModal(false);
       setAdminPassword('');
-      setActiveTab('board2'); // 登入後直接切入主管總覽
+      setActiveTab('board2');
     } else {
       alert('密碼錯誤！');
     }
@@ -104,7 +117,7 @@ export default function OtaDutyApp() {
     <main className="min-h-screen bg-slate-50 text-slate-800">
       {/* 頂部導覽列 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="max-w-[98%] mx-auto px-4 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Shield className="w-6 h-6 text-emerald-600" /> OTA Duty - 醫療人員更次管理系統
@@ -112,7 +125,6 @@ export default function OtaDutyApp() {
             <p className="text-xs text-slate-500">Caritas Medical Centre - Operation Theatre</p>
           </div>
 
-          {/* 右上角登入與檢視切換區 */}
           <div className="flex items-center gap-3">
             {!isAdmin ? (
               <button
@@ -124,29 +136,19 @@ export default function OtaDutyApp() {
             ) : (
               <div className="flex items-center gap-2">
                 <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <button
-                    onClick={() => setActiveTab('board1')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board1' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}
-                  >
+                  <button onClick={() => setActiveTab('board1')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board1' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
                     申請更次
                   </button>
-                  <button
-                    onClick={() => setActiveTab('board2')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board2' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}
-                  >
+                  <button onClick={() => setActiveTab('board2')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board2' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
                     主管總覽與工時
                   </button>
-                  <button
-                    onClick={() => setActiveTab('board3')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board3' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}
-                  >
+                  <button onClick={() => setActiveTab('board3')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board3' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
                     統計與透明度
                   </button>
                 </div>
                 <button
                   onClick={() => { setIsAdmin(false); setActiveTab('board1'); }}
                   className="flex items-center gap-1 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-medium transition-all"
-                  title="登出主管模式"
                 >
                   <LogOut className="w-3.5 h-3.5" /> 登出
                 </button>
@@ -156,7 +158,7 @@ export default function OtaDutyApp() {
         </div>
       </header>
 
-      {/* 主管登入彈出視窗 (Modal) */}
+      {/* 主管登入 Modal */}
       {showLoginModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200">
@@ -166,7 +168,7 @@ export default function OtaDutyApp() {
               </h3>
               <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
-            <p className="text-sm text-slate-500 mb-4">請輸入主管密碼以解鎖排班總覽與工時計算功能。（預設密碼：admin123）</p>
+            <p className="text-sm text-slate-500 mb-4">請輸入主管密碼以解鎖排班總覽與 176 小時工時計算。（預設密碼：admin123）</p>
             <form onSubmit={handleAdminLogin} className="space-y-4">
               <input
                 type="password"
@@ -185,10 +187,10 @@ export default function OtaDutyApp() {
         </div>
       )}
 
-      {/* 內容區塊 */}
-      <div className="max-w-7xl mx-auto p-6">
+      {/* 主內容區域 */}
+      <div className="max-w-[98%] mx-auto py-6">
         
-        {/* 版面 1：同事意願申請（所有人可見） */}
+        {/* 版面 1：同事意願申請 */}
         {activeTab === 'board1' && (
           <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
             <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
@@ -203,7 +205,7 @@ export default function OtaDutyApp() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">選擇日期</label>
-                <input type="date" value={selectedDate} min="2026-10-13" max="2026-12-31" onChange={(e) => setSelectedDate(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-slate-300" />
+                <input type="date" value={selectedDate} min="2026-10-01" max="2026-10-31" onChange={(e) => setSelectedDate(e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-slate-300" />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">選擇 Duty Pattern</label>
@@ -225,43 +227,88 @@ export default function OtaDutyApp() {
           </div>
         )}
 
-        {/* 版面 2：主管總覽與工時（需登入解鎖） */}
+        {/* 版面 2：主管 Excel 全月矩陣 (1-31日) 與 176 小時工時計算 */}
         {activeTab === 'board2' && isAdmin && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
               <div>
-                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Edit3 className="w-5 h-5 text-emerald-600" /> 主管 Excel 矩陣總覽與 44 小時工時計算</h2>
-                <p className="text-sm text-slate-500 mt-1">修改表格中的更次將自動即時同步儲存至 Supabase 資料庫。</p>
+                <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Edit3 className="w-5 h-5 text-emerald-600" /> 主管全月矩陣總覽與 176 小時工時核對
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">即時檢視 10 月 1 至 31 日全月更次。右側自動計算月總工時（目標：176.0 hrs）。</p>
               </div>
+              <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg text-sm font-semibold">
+                月目標工時：176.0 小時
+              </span>
             </div>
+
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-sm">
+                <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 border-b">
-                      <th className="p-3 font-semibold min-w-[140px] sticky left-0 bg-slate-100 z-10 border-r">員工姓名</th>
-                      {daysInMonth.map(day => <th key={day} className="p-3 text-center min-w-[120px] border-l">10/{day}</th>)}
-                      <th className="p-3 text-center font-bold min-w-[100px] border-l bg-slate-100">每週總工時</th>
+                      <th className="p-3 font-bold min-w-[130px] sticky left-0 bg-slate-100 z-10 border-r shadow-sm">員工姓名</th>
+                      {daysInMonth.map(day => (
+                        <th key={day} className="p-2 text-center min-w-[95px] border-l font-semibold">
+                          10/{day}
+                        </th>
+                      ))}
+                      <th className="p-3 text-center font-bold min-w-[160px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">
+                        全月總工時 (目標 176h)
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {STAFF_LIST.map(staff => (
-                      <tr key={staff} className="hover:bg-slate-50">
-                        <td className="p-3 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r">{staff}</td>
-                        {daysInMonth.map(day => {
-                          const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
-                          const currentVal = matrixShifts[`${staff}-${dateStr}`] || 'OFF';
-                          return (
-                            <td key={day} className="p-2 border-l text-center">
-                              <select value={currentVal} onChange={(e) => handleMatrixChange(staff, day, e.target.value)} className="w-full p-1.5 text-xs font-semibold rounded border bg-slate-50">
-                                {DUTY_PATTERNS.map(p => <option key={p.id} value={p.id}>{p.id}</option>)}
-                              </select>
-                            </td>
-                          );
-                        })}
-                        <td className="p-3 text-center font-bold text-slate-700 border-l bg-slate-50">44.0 hrs</td>
-                      </tr>
-                    ))}
+                    {STAFF_LIST.map(staff => {
+                      const totalHrs = calculateTotalHours(staff);
+                      const isExact = totalHrs === 176;
+                      const isShort = totalHrs < 176;
+
+                      return (
+                        <tr key={staff} className="hover:bg-slate-50">
+                          <td className="p-3 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm">
+                            {staff}
+                          </td>
+                          {daysInMonth.map(day => {
+                            const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
+                            const currentVal = matrixShifts[`${staff}-${dateStr}`] || 'OFF';
+                            return (
+                              <td key={day} className="p-1 border-l text-center">
+                                <select
+                                  value={currentVal}
+                                  onChange={(e) => handleMatrixChange(staff, day, e.target.value)}
+                                  className={`w-full p-1 text-[11px] font-semibold rounded border ${
+                                    currentVal === '0800-1648' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                                    currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800 border-blue-300' :
+                                    currentVal === '1300-2148' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                                    currentVal === 'AN' ? 'bg-purple-50 text-purple-800 border-purple-300' :
+                                    'bg-slate-50 text-slate-400 border-slate-200'
+                                  }`}
+                                >
+                                  {DUTY_PATTERNS.map(p => (
+                                    <option key={p.id} value={p.id}>{p.id}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            );
+                          })}
+                          
+                          {/* 月總工時與合規狀態欄 */}
+                          <td className="p-3 text-center sticky right-0 bg-white z-10 border-l shadow-sm">
+                            <div className={`px-2 py-1 rounded-md font-bold text-xs ${
+                              isExact ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' :
+                              isShort ? 'bg-amber-100 text-amber-800 border border-amber-300' :
+                              'bg-blue-100 text-blue-800 border border-blue-300'
+                            }`}>
+                              {totalHrs.toFixed(1)} hrs
+                              <span className="block text-[10px] font-normal mt-0.5">
+                                {isExact ? '✓ 剛好達標' : isShort ? `缺 ${(176 - totalHrs).toFixed(1)}h` : `OT +${(totalHrs - 176).toFixed(1)}h`}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -269,26 +316,30 @@ export default function OtaDutyApp() {
           </div>
         )}
 
-        {/* 版面 3：統計與透明度（需登入解鎖） */}
+        {/* 版面 3：統計與透明度 */}
         {activeTab === 'board3' && isAdmin && (
           <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-            <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-emerald-600" /> 版面 3：統計與透明度專區</h2>
-            <p className="text-sm text-slate-500 mb-6">從資料庫彙整的各同事 Request 次數統計。</p>
+            <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-emerald-600" /> 版面 3：全月 Request 統計與透明度
+            </h2>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b">
                     <th className="p-3 font-semibold">員工姓名</th>
                     <th className="p-3 text-center font-semibold">本月 Request 總次數</th>
+                    <th className="p-3 text-center font-semibold">全月已排總工時</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {STAFF_LIST.map(staff => {
                     const count = requests.filter(r => r.staff_name === staff).length;
+                    const totalHrs = calculateTotalHours(staff);
                     return (
                       <tr key={staff} className="hover:bg-slate-50">
                         <td className="p-3 font-semibold text-slate-900">{staff}</td>
                         <td className="p-3 text-center font-medium text-slate-700">{count} 次</td>
+                        <td className="p-3 text-center font-bold text-emerald-700">{totalHrs.toFixed(1)} 小時</td>
                       </tr>
                     );
                   })}
