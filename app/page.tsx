@@ -412,7 +412,9 @@ export default function OtaDutyApp() {
                     disabled={defaultConfig.isLocked && !isAdmin}
                   />
                 </div>
-
+<div className="text-xs text-slate-500 mt-1">
+    💡 只可選擇 【{defaultConfig.targetMonthNum}月份】（1號至 {activeMonthConfig.daysInMonth}號）之內的日期。
+  </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">選擇 Duty Pattern</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
