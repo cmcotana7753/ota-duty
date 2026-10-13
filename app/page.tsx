@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Users, Clock, AlertTriangle, Send, CheckCircle2, Shield, BarChart3, Edit3, Lock, Unlock, LogOut, Eye, CheckCircle } from 'lucide-react';
+import { Calendar, Users, Clock, AlertTriangle, Send, CheckCircle2, Shield, BarChart3, Edit3, Lock, Unlock, LogOut, Eye, Download, CheckCircle } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
-// 23 位完整同事名單
 const STAFF_LIST = [
   'Tong Yiu Bun',
   'Ng Wai Hung Samuel',
@@ -35,14 +34,14 @@ const DUTY_PATTERNS = [
   { id: '0800-1648', label: '0800-1648 (A)', mins: 528, hours: 8.8, desc: '平日>=6人, 假期/週末3人' },
   { id: '1000-1848', label: '1000-1848 (10點)', mins: 528, hours: 8.8, desc: '每日限 1 人' },
   { id: '1330-2218', label: '1330-2218 (P)', mins: 528, hours: 8.8, desc: '平日2人, 假期/週末1人' },
-  { id: 'AN', label: 'AN (AN)', mins: 966, hours: 16.1, desc: '每日限 1 人 (966 分鐘)' },
-  { id: 'N', label: 'N (夜更)', mins: 528, hours: 8.8, desc: '夜更 (528 分鐘)' },
-   { id: 'AL', label: 'AL (年假)', mins: 528, hours: 8.8, desc: '年假 (計算工時 8.8hrs)' },
-  { id: 'CL', label: 'CL (恩恤假)', mins: 528, hours: 8.8, desc: '恩恤假 (計算工時 8.8hrs)' },
-  { id: 'ML', label: 'ML (產假)', mins: 528, hours: 8.8, desc: '產假 (計算工時 8.8hrs)' },
-  { id: '育嬰假', label: '育嬰假', mins: 528, hours: 8.8, desc: '育嬰假 (計算工時 8.8hrs)' },
-  { id: 'DO', label: 'DO (Day Off)', mins: 0, hours: 0, desc: 'Day Off (每月必須剛好4日)' },
-  { id: 'O', label: 'O (OFF)', mins: 0, hours: 0, desc: 'Off (每週一至日必須至少1日)' },
+  { id: 'AN', label: 'AN (AN)', mins: 966, hours: 16.1, desc: '每日限 1 人' },
+  { id: 'N', label: 'N (夜更)', mins: 528, hours: 8.8, desc: '夜更' },
+  { id: 'AL', label: 'AL (年假)', mins: 528, hours: 8.8, desc: '年假' },
+  { id: 'CL', label: 'CL (恩恤假)', mins: 528, hours: 8.8, desc: '恩恤假' },
+  { id: 'ML', label: 'ML (產假)', mins: 528, hours: 8.8, desc: '產假' },
+  { id: '育嬰假', label: '育嬰假', mins: 528, hours: 8.8, desc: '育嬰假' },
+  { id: 'DO', label: 'DO (DAY OFF)', mins: 0, hours: 0, desc: 'DAY OFF (每月剛好4日)' },
+  { id: 'O', label: 'O (休假)', mins: 0, hours: 0, desc: '休假 (每週至少1日)' },
 ];
 
 export default function OtaDutyApp() {
@@ -63,13 +62,12 @@ export default function OtaDutyApp() {
 
   const daysInMonth = Array.from({ length: 31 }, (_, i) => i + 1);
 
-  // 2026年10月 按星期一至星期日分組的週次 (Weeks Mon-Sun)
   const weeks = [
-    { name: 'W1', days: [1, 2, 3, 4] },              // 10/1(Thu) - 10/4(Sun)
-    { name: 'W2', days: [5, 6, 7, 8, 9, 10, 11] },    // Mon - Sun
-    { name: 'W3', days: [12, 13, 14, 15, 16, 17, 18] },// Mon - Sun
-    { name: 'W4', days: [19, 20, 21, 22, 23, 24, 25] },// Mon - Sun
-    { name: 'W5', days: [26, 27, 28, 29, 30, 31] }     // Mon - Sat
+    { name: 'W1', days: [1, 2, 3, 4] },
+    { name: 'W2', days: [5, 6, 7, 8, 9, 10, 11] },
+    { name: 'W3', days: [12, 13, 14, 15, 16, 17, 18] },
+    { name: 'W4', days: [19, 20, 21, 22, 23, 24, 25] },
+    { name: 'W5', days: [26, 27, 28, 29, 30, 31] }
   ];
 
   useEffect(() => {
@@ -97,7 +95,7 @@ export default function OtaDutyApp() {
 
     const userReqCount = requests.filter(r => r.staff_name === selectedStaff).length + 1;
     if (userReqCount > 4) {
-      setWarningMsg(`⚠️ 提醒：${selectedStaff} 本月更次請求已達 ${userReqCount} 次！呀SIR開始唔高興。`);
+      setWarningMsg(`⚠️ 提醒：${selectedStaff} 本月更期申請已達 ${userReqCount} 次！呀SIR開始唔高興。`);
     }
 
     const { error: reqError } = await supabase.from('staff_requests').insert([
@@ -113,7 +111,7 @@ export default function OtaDutyApp() {
       { staff_name: selectedStaff, duty_date: selectedDate, pattern: selectedPattern }
     ], { onConflict: 'staff_name,duty_date' });
 
-    setSuccessMsg(`✅ 成功提交 ${selectedDate} 的 [${selectedPattern}] 申請！比D時間呀SIR諗諗`);
+    setSuccessMsg(`✅ 成功提交 ${selectedDate} 的 [${selectedPattern}] 更期申請！`);
     fetchData();
   };
 
@@ -137,21 +135,16 @@ export default function OtaDutyApp() {
     return totalMins;
   };
 
-  // 驗證 DO/O 條件邏輯
   const checkOffRules = (staff: string) => {
     let totalDO = 0;
     let missingOInWeek = false;
     let doExceededInWeek = false;
 
-    // 計算當月總 DO
     daysInMonth.forEach(day => {
       const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
-      if (matrixShifts[`${staff}-${dateStr}`] === 'DO') {
-        totalDO++;
-      }
+      if (matrixShifts[`${staff}-${dateStr}`] === 'DO') totalDO++;
     });
 
-    // 檢查每週 O 與 DO 限制 (Mon to Sun)
     weeks.forEach(w => {
       let oCount = 0;
       let doCount = 0;
@@ -161,35 +154,57 @@ export default function OtaDutyApp() {
         if (p === 'O') oCount++;
         if (p === 'DO') doCount++;
       });
-
-      // 完整週 (7 天) 必須至少 1 個 O
-      if (w.days.length >= 7 && oCount < 1) {
-        missingOInWeek = true;
-      }
-      // 單週 DO 不能超過 2 天
-      if (doCount > 2) {
-        doExceededInWeek = true;
-      }
+      if (w.days.length >= 7 && oCount < 1) missingOInWeek = true;
+      if (doCount > 2) doExceededInWeek = true;
     });
 
     const isDoValid = totalDO === 4;
-    return {
-      totalDO,
-      isDoValid,
-      missingOInWeek,
-      doExceededInWeek,
-      hasError: !isDoValid || missingOInWeek || doExceededInWeek
-    };
+    return { totalDO, isDoValid, missingOInWeek, doExceededInWeek, hasError: !isDoValid || missingOInWeek || doExceededInWeek };
   };
 
   const getDayPatternCount = (dateStr: string, patternId: string) => {
     let count = 0;
     STAFF_LIST.forEach(staff => {
-      if (matrixShifts[`${staff}-${dateStr}`] === patternId) {
-        count++;
-      }
+      if (matrixShifts[`${staff}-${dateStr}`] === patternId) count++;
     });
     return count;
+  };
+
+  // 檢查某個更次是否為該同事自己 Request 的（用於加上 ^ 標記）
+  const isRequestedByStaff = (staff: string, dateStr: string, pattern: string) => {
+    return requests.some(r => r.staff_name === staff && r.request_date === dateStr && r.pattern === pattern);
+  };
+
+  // 📥 匯出 Excel (CSV 格式，帶 ^ 標記)
+  const handleExportCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // 支援中文編碼
+    
+    // 表頭：員工姓名 + 1至31日 + 總工時
+    let header = ["員工姓名", ...daysInMonth.map(d => `10/${d}`), "全月總工時"];
+    csvContent += header.join(",") + "\r\n";
+
+    STAFF_LIST.forEach(staff => {
+      let row = [`"${staff}"`];
+      daysInMonth.forEach(day => {
+        const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
+        const pattern = matrixShifts[`${staff}-${dateStr}`] || 'O';
+        // 若該更次屬於同事 Request，則自動加上 ^ 標記
+        const hasCarat = isRequestedByStaff(staff, dateStr, pattern);
+        const cellVal = hasCarat ? `${pattern}^` : pattern;
+        row.push(`"${cellVal}"`);
+      });
+      const totalMins = calculateTotalMinutes(staff);
+      row.push(`"${(totalMins / 60).toFixed(1)} hrs"`);
+      csvContent += row.join(",") + "\r\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "OTA_Duty_Schedule_2026_Oct_Export.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleAdminLogin = (e: React.FormEvent) => {
@@ -206,12 +221,11 @@ export default function OtaDutyApp() {
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800">
-      {/* 頂部導覽列 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-[98%] mx-auto px-4 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Shield className="w-6 h-6 text-emerald-600" /> 麻醉助理更期管理系統
+              <Shield className="w-6 h-6 text-emerald-600" /> 麻醉助理日常更期管理系統
             </h1>
             <p className="text-xs text-slate-500">Caritas Medical Centre - Operating Theatre</p>
           </div>
@@ -222,12 +236,12 @@ export default function OtaDutyApp() {
                 📝 申請更期
               </button>
               <button onClick={() => setActiveTab('preview')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'preview' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
-                👀 預計更表 (唔好同人撞DUTY)
+                👀 預計更表 (唔好同人撞期,大家傾左先)
               </button>
               {isAdmin && (
                 <>
                   <button onClick={() => setActiveTab('board2')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board2' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
-                    📊 同事工時總覽
+                    📊 主管總覽
                   </button>
                   <button onClick={() => setActiveTab('board3')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${activeTab === 'board3' ? 'bg-white text-emerald-700 shadow-sm' : 'text-slate-600'}`}>
                     📈 統計
@@ -249,7 +263,6 @@ export default function OtaDutyApp() {
         </div>
       </header>
 
-      {/* 主管登入 Modal */}
       {showLoginModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-slate-200">
@@ -277,14 +290,13 @@ export default function OtaDutyApp() {
         </div>
       )}
 
-      {/* 內容區塊 */}
       <div className="max-w-[98%] mx-auto py-6">
         
         {/* 版面 1：同事意願申請 */}
         {activeTab === 'board1' && (
           <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
             <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-emerald-600" /> 心水更期 (Staff Request)
+              <Calendar className="w-5 h-5 text-emerald-600" /> 同事更期申請 (Staff Request)
             </h2>
             <form onSubmit={handleSubmitRequest} className="space-y-5">
               <div>
@@ -323,9 +335,9 @@ export default function OtaDutyApp() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Eye className="w-5 h-5 text-emerald-600" /> 預計更表 (唔好同人撞DUTY)
+                  <Eye className="w-5 h-5 text-emerald-600" /> 預計更期與即時防撞期監控 (Public Preview)
                 </h2>
-                <p className="text-sm text-slate-500 mt-1">即時顯示所有 23 位同事登記的更次。如有 AN 或中班超額會亮粉紅警告。</p>
+                <p className="text-sm text-slate-500 mt-1">即時顯示所有 23 位同事登記的更期。申請過的更期帶有 ^ 標記。</p>
               </div>
             </div>
 
@@ -336,13 +348,9 @@ export default function OtaDutyApp() {
                     <tr className="bg-slate-100 text-slate-700 border-b">
                       <th className="p-3 font-bold min-w-[170px] sticky left-0 bg-slate-100 z-10 border-r shadow-sm">員工姓名</th>
                       {daysInMonth.map(day => (
-                        <th key={day} className="p-2 text-center min-w-[95px] border-l font-semibold">
-                          10/{day}
-                        </th>
+                        <th key={day} className="p-2 text-center min-w-[95px] border-l font-semibold">10/{day}</th>
                       ))}
-                      <th className="p-3 text-center font-bold min-w-[140px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">
-                        全月預計工時
-                      </th>
+                      <th className="p-3 text-center font-bold min-w-[140px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">全月預計工時</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -352,13 +360,12 @@ export default function OtaDutyApp() {
 
                       return (
                         <tr key={staff} className="hover:bg-slate-50">
-                          <td className="p-3 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm">
-                            {staff}
-                          </td>
+                          <td className="p-3 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm">{staff}</td>
                           {daysInMonth.map(day => {
                             const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
                             const currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
-                            
+                            const hasRequested = isRequestedByStaff(staff, dateStr, currentVal);
+
                             const isAnOver = currentVal === 'AN' && getDayPatternCount(dateStr, 'AN') > 1;
                             const isMidOver = currentVal === '1000-1848' && getDayPatternCount(dateStr, '1000-1848') > 1;
                             const hasWarning = isAnOver || isMidOver;
@@ -373,15 +380,13 @@ export default function OtaDutyApp() {
                                   ['AL', 'CL', 'ML', '育嬰假'].includes(currentVal) ? 'bg-teal-50 text-teal-800' :
                                   'bg-slate-50 text-slate-400'
                                 }`}>
-                                  {currentVal}
+                                  {currentVal}{hasRequested ? '^' : ''}
                                   {hasWarning && <span className="block text-[9px] text-rose-600 font-bold">⚠️ 撞期</span>}
                                 </div>
                               </td>
                             );
                           })}
-                          <td className="p-3 text-center font-bold text-slate-700 sticky right-0 bg-white z-10 border-l shadow-sm">
-                            {totalHrs} hrs
-                          </td>
+                          <td className="p-3 text-center font-bold text-slate-700 sticky right-0 bg-white z-10 border-l shadow-sm">{totalHrs} hrs</td>
                         </tr>
                       );
                     })}
@@ -392,19 +397,22 @@ export default function OtaDutyApp() {
           </div>
         )}
 
-        {/* 版面 2：主管 Excel 全月矩陣與 DO/O 自動驗證 */}
+        {/* 版面 2：主管 Excel 全月矩陣 + 一鍵匯出帶 ^ 標記的 Excel */}
         {activeTab === 'board2' && isAdmin && (
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex justify-between items-center">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Edit3 className="w-5 h-5 text-emerald-600" /> 主管全月矩陣總覽、176 小時工時與 DO/O 合規檢查
+                  <Edit3 className="w-5 h-5 text-emerald-600" /> 主管全月總覽與匯出 Excel
                 </h2>
-                <p className="text-sm text-slate-500 mt-1">自動驗證：每週(Mon-Sun)必須包含 $\ge 1$ 日 O；全月 DO 必須剛好 4 天且單週 $\le 2$ 天 DO。</p>
+                <p className="text-sm text-slate-500 mt-1">點擊右側按鈕可一鍵匯出帶有 `^` 標記的 Excel (CSV)，方便你手動執整後列印。</p>
               </div>
-              <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-lg text-sm font-semibold">
-                月目標：10,560 分鐘 (176.0 小時)
-              </span>
+              <button
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium shadow-sm transition-all"
+              >
+                <Download className="w-4 h-4" /> 📥 匯出 Excel (連 ^ 標記)
+              </button>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -414,16 +422,10 @@ export default function OtaDutyApp() {
                     <tr className="bg-slate-100 text-slate-700 border-b">
                       <th className="p-3 font-bold min-w-[170px] sticky left-0 bg-slate-100 z-10 border-r shadow-sm">員工姓名</th>
                       {daysInMonth.map(day => (
-                        <th key={day} className="p-2 text-center min-w-[95px] border-l font-semibold">
-                          10/{day}
-                        </th>
+                        <th key={day} className="p-2 text-center min-w-[95px] border-l font-semibold">10/{day}</th>
                       ))}
-                      <th className="p-3 text-center font-bold min-w-[160px] border-l bg-slate-100">
-                        DO/O 規則檢查
-                      </th>
-                      <th className="p-3 text-center font-bold min-w-[170px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">
-                        全月總工時 (目標 10560m)
-                      </th>
+                      <th className="p-3 text-center font-bold min-w-[160px] border-l bg-slate-100">DO/O 規則檢查</th>
+                      <th className="p-3 text-center font-bold min-w-[170px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">全月總工時 (目標 10560m)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -432,52 +434,52 @@ export default function OtaDutyApp() {
                       const totalHrs = (totalMins / 60).toFixed(1);
                       const isExact = totalMins === 10560;
                       const isShort = totalMins < 10560;
-
-                      // 檢查 DO / O 規則
                       const offCheck = checkOffRules(staff);
 
                       return (
                         <tr key={staff} className="hover:bg-slate-50">
-                          <td className="p-3 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm">
-                            {staff}
-                          </td>
+                          <td className="p-3 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm">{staff}</td>
                           {daysInMonth.map(day => {
                             const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
                             const currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
+                            const hasRequested = isRequestedByStaff(staff, dateStr, currentVal);
+
                             return (
                               <td key={day} className="p-1 border-l text-center">
-                                <select
-                                  value={currentVal}
-                                  onChange={(e) => handleMatrixChange(staff, day, e.target.value)}
-                                  className={`w-full p-1 text-[11px] font-semibold rounded border ${
-                                    currentVal === '0800-1648' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
-                                    currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800 border-blue-300' :
-                                    currentVal === '1330-2218' ? 'bg-amber-50 text-amber-800 border-amber-300' :
-                                    currentVal === 'AN' ? 'bg-purple-50 text-purple-800 border-purple-300' :
-                                    ['AL', 'CL', 'ML', '育嬰假'].includes(currentVal) ? 'bg-teal-50 text-teal-800 border-teal-300' :
-                                    'bg-slate-50 text-slate-400 border-slate-200'
-                                  }`}
-                                >
-                                  {DUTY_PATTERNS.map(p => (
-                                    <option key={p.id} value={p.id}>{p.id}</option>
-                                  ))}
-                                </select>
+                                <div className="flex items-center gap-1">
+                                  <select
+                                    value={currentVal}
+                                    onChange={(e) => handleMatrixChange(staff, day, e.target.value)}
+                                    className={`w-full p-1 text-[11px] font-semibold rounded border ${
+                                      currentVal === '0800-1648' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                                      currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800 border-blue-300' :
+                                      currentVal === '1330-2218' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                                      currentVal === 'AN' ? 'bg-purple-50 text-purple-800 border-purple-300' :
+                                      ['AL', 'CL', 'ML', '育嬰假'].includes(currentVal) ? 'bg-teal-50 text-teal-800 border-teal-300' :
+                                      'bg-slate-50 text-slate-400 border-slate-200'
+                                    }`}
+                                  >
+                                    {DUTY_PATTERNS.map(p => (
+                                      <option key={p.id} value={p.id}>{p.id}</option>
+                                    ))}
+                                  </select>
+                                  {hasRequested && <span className="text-emerald-600 font-bold text-xs" title="同事 Request 申請">^</span>}
+                                </div>
                               </td>
                             );
                           })}
                           
-                          {/* DO/O 合規狀態欄 */}
                           <td className="p-2 border-l text-center">
                             {offCheck.hasError ? (
                               <div className="p-1 rounded bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[10px]">
                                 ⚠️ 不合規
-                                {offCheck.totalDO !== 4 && <span className="block text-[9px] font-normal">DO 總數: {offCheck.totalDO}/4 天</span>}
-                                {offCheck.missingOInWeek && <span className="block text-[9px] font-normal">某週缺少 O</span>}
-                                {offCheck.doExceededInWeek && <span className="block text-[9px] font-normal">單週 DO &gt; 2 天</span>}
+                                {offCheck.totalDO !== 4 && <span className="block text-[9px] font-normal">DO: {offCheck.totalDO}/4天</span>}
+                                {offCheck.missingOInWeek && <span className="block text-[9px] font-normal">缺 O</span>}
+                                {offCheck.doExceededInWeek && <span className="block text-[9px] font-normal">DO&gt;2天</span>}
                               </div>
                             ) : (
                               <div className="p-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-[10px] flex items-center justify-center gap-1">
-                                <CheckCircle className="w-3 h-3 text-emerald-600" /> 完美合規 (DO: 4天)
+                                <CheckCircle className="w-3 h-3 text-emerald-600" /> 合規 (DO:4)
                               </div>
                             )}
                           </td>
@@ -504,29 +506,48 @@ export default function OtaDutyApp() {
           </div>
         )}
 
-        {/* 版面 3：統計與透明度 */}
+        {/* 版面 3：統計與公平分派 (新增 AN 及 P 班總次數統計) */}
         {activeTab === 'board3' && isAdmin && (
-          <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
-            <h2 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-emerald-600" /> 版面 3：全月 Request 統計
+          <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+            <h2 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-emerald-600" /> 版面 3：公平分派統計 (AN & P 班總次數)
             </h2>
+            <p className="text-sm text-slate-500 mb-6">實時統計每位同事本月取得的 AN 次數與 P 班（1330-2218）次數，確保更期分配公平。</p>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-left text-sm">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 border-b">
                     <th className="p-3 font-semibold">員工姓名</th>
                     <th className="p-3 text-center font-semibold">本月 Request 總次數</th>
+                    <th className="p-3 text-center font-semibold text-purple-700">AN 總次數 (AN)</th>
+                    <th className="p-3 text-center font-semibold text-amber-700">P 班總次數 (1330-2218)</th>
                     <th className="p-3 text-center font-semibold">全月已排總工時</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {STAFF_LIST.map(staff => {
-                    const count = requests.filter(r => r.staff_name === staff).length;
+                    const reqCount = requests.filter(r => r.staff_name === staff).length;
+                    
+                    // 計算 AN 總次數
+                    let anCount = 0;
+                    // 計算 P 班總次數
+                    let pCount = 0;
+
+                    daysInMonth.forEach(day => {
+                      const dateStr = `2026-10-${day < 10 ? '0' + day : day}`;
+                      const pattern = matrixShifts[`${staff}-${dateStr}`];
+                      if (pattern === 'AN') anCount++;
+                      if (pattern === '1330-2218') pCount++;
+                    });
+
                     const totalMins = calculateTotalMinutes(staff);
+
                     return (
                       <tr key={staff} className="hover:bg-slate-50">
                         <td className="p-3 font-semibold text-slate-900">{staff}</td>
-                        <td className="p-3 text-center font-medium text-slate-700">{count} 次</td>
+                        <td className="p-3 text-center font-medium text-slate-700">{reqCount} 次</td>
+                        <td className="p-3 text-center font-bold text-purple-700 bg-purple-50/50">{anCount} 次</td>
+                        <td className="p-3 text-center font-bold text-amber-700 bg-amber-50/50">{pCount} 次</td>
                         <td className="p-3 text-center font-bold text-emerald-700">{(totalMins / 60).toFixed(1)} 小時 ({totalMins}m)</td>
                       </tr>
                     );
