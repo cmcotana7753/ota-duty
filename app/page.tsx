@@ -543,15 +543,24 @@ export default function OtaDutyApp() {
 ))}
 </div>
                 </div>
-{/* 簡化版 Excel 矩陣實況表 (Matrix View) */}
+{/* 簡化版 Excel 矩陣實況表 (Staff x Date) */}
 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-  <div className="flex items-center justify-between mb-3">
+<div className="flex items-center justify-between mb-3">
     <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
       📊 {defaultConfig.targetMonthNum}月份 OTA Request 簡化版 Excel 實況表
     </h3>
-    <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-      即時同步中 (每5秒更新)
-    </span>
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+        每5秒自動更新
+      </span>
+      <button
+        onClick={() => fetchData()}
+        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors active:scale-95"
+        title="手動刷新資料"
+      >
+        🔄 刷新
+      </button>
+    </div>
   </div>
 
   <div className="overflow-x-auto max-h-80 overflow-y-auto border border-slate-200 rounded-lg">
@@ -559,48 +568,49 @@ export default function OtaDutyApp() {
       <thead>
         <tr className="bg-slate-100 text-slate-700 sticky top-0 z-10 border-b border-slate-200">
           <th className="p-2 border-r border-slate-200 font-semibold sticky left-0 bg-slate-100 z-20 min-w-[70px]">
-            日期
+            同事
           </th>
-          {STAFF_LIST.map((staffName) => (
-            <th key={staffName} className="p-2 border-r border-slate-200 font-medium whitespace-nowrap min-w-[55px]">
-              {staffName.length > 4 ? staffName.slice(-4) : staffName}
-            </th>
-          ))}
+          {activeMonthConfig.daysArray.map((dayNum) => {
+            const formattedDay = String(dayNum).padStart(2, '0');
+            return (
+              <th key={dayNum} className="p-2 border-r border-slate-200 font-medium whitespace-nowrap min-w-[45px]">
+                {formattedDay}日
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {activeMonthConfig.daysArray.map((dayNum) => {
-          const formattedDay = String(dayNum).padStart(2, '0');
-          const dateStr = `${activeMonthConfig.monthStr}-${formattedDay}`;
+        {STAFF_LIST.map((staffName) => (
+          <tr key={staffName} className="hover:bg-slate-50">
+            {/* 同事姓名欄位 (固定在左側) */}
+            <td className="p-2 border-r border-slate-200 font-bold bg-slate-50 sticky left-0 z-10 text-slate-700 text-left">
+              {staffName}
+            </td>
 
-          return (
-            <tr key={dateStr} className="hover:bg-slate-50">
-              {/* 日期欄位 (固定在左側) */}
-              <td className="p-2 border-r border-slate-200 font-bold bg-slate-50 sticky left-0 z-10 text-slate-700">
-                {formattedDay}日
-              </td>
+            {/* 各日期的 Request 狀態 */}
+            {activeMonthConfig.daysArray.map((dayNum) => {
+              const formattedDay = String(dayNum).padStart(2, '0');
+              const dateStr = `${activeMonthConfig.monthStr}-${formattedDay}`;
 
-              {/* 各個同事在該日期的 Request 狀態 */}
-              {STAFF_LIST.map((staffName) => {
-                const matchedReq = requests.find(
-                  (r) => r.request_date === dateStr && r.staff_name === staffName
-                );
+              const matchedReq = requests.find(
+                (r) => r.request_date === dateStr && r.staff_name === staffName
+              );
 
-                return (
-                  <td key={staffName} className="p-1.5 border-r border-slate-100">
-                    {matchedReq ? (
-                      <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px] border border-emerald-300 shadow-xs">
-                        {matchedReq.pattern}
-                      </span>
-                    ) : (
-                      <span className="text-slate-300">-</span>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          );
-        })}
+              return (
+                <td key={dateStr} className="p-1.5 border-r border-slate-100">
+                  {matchedReq ? (
+                    <span className="inline-block px-1 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[9px] border border-emerald-300 shadow-xs">
+                      {matchedReq.pattern}
+                    </span>
+                  ) : (
+                    <span className="text-slate-300">-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
       </tbody>
     </table>
   </div>
