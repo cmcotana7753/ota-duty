@@ -109,7 +109,9 @@ export default function OtaDutyApp() {
   const [selectedDate, setSelectedDate] = useState(`${defaultConfig.monthStr}-01`);
   const [selectedPattern, setSelectedPattern] = useState(DUTY_PATTERNS[0].id);
   
-  const [requests, setRequests] = useState<{ staff_name: string; request_date: string; pattern: string }[]>([]);
+  const [requests, setRequests] = useState<{
+    duty_pattern: string; staff_name: string; request_date: string; pattern: string 
+}[]>([]);
   const [matrixShifts, setMatrixShifts] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState('');
   const [warningMsg, setWarningMsg] = useState('');
