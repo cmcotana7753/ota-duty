@@ -50,7 +50,9 @@ const DUTY_PATTERNS = [
 
 export default function OtaDutyApp() {
   const [activeTab, setActiveTab] = useState<'board1' | 'preview' | 'board2' | 'board3'>('board1');
-  
+  // 記錄連假選取的起點日期
+const [rangeStartDate, setRangeStartDate] = useState<string | null>(null);
+const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
@@ -191,7 +193,57 @@ export default function OtaDutyApp() {
       setSelectedStaff(savedStaff);
     }
   }, []);
+// 處理日期點擊（支援買機票式的連假選取）
+  const handleDateClick = (clickedDateStr: string) => {
+    // 檢查當前選取的 Pattern 限額
+    let maxDays = 1;
+    if (selectedPattern === 'AL') maxDays = 5;
+    else if (selectedPattern === 'CL' || selectedPattern === '育嬰假') maxDays = 3;
+    else if (selectedPattern === 'ML') maxDays = 31; // 不限日數
 
+    // 如果選擇普通更次，或者尚未點選開始日期
+    if (maxDays === 1 || !rangeStartDate) {
+      setRangeStartDate(clickedDateStr);
+      setSelectedDate(clickedDateStr);
+      setSelectedDates([clickedDateStr]);
+      return;
+    }
+
+    // 點選第二個日期（計算連續日期範圍）
+    const start = new Date(rangeStartDate);
+    const end = new Date(clickedDateStr);
+
+    // 如果後點的日期比起點早，重新設為起點
+    if (end < start) {
+      setRangeStartDate(clickedDateStr);
+      setSelectedDate(clickedDateStr);
+      setSelectedDates([clickedDateStr]);
+      return;
+    }
+
+    // 計算日數差
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    if (diffDays > maxDays) {
+      alert(`【${selectedPattern}】最多只能連續選擇 ${maxDays} 天！`);
+      return;
+    }
+
+    // 生成連續日期陣列
+    const rangeArray: string[] = [];
+    let curr = new Date(start);
+    while (curr <= end) {
+      const year = curr.getFullYear();
+      const month = String(curr.getMonth() + 1).padStart(2, '0');
+      const day = String(curr.getDate()).padStart(2, '0');
+      rangeArray.push(`${year}-${month}-${day}`);
+      curr.setDate(curr.getDate() + 1);
+    }
+
+    setSelectedDates(rangeArray); // 批量選取連假
+    setRangeStartDate(null); // 重設起點狀態
+  };
   const fetchData = async () => {
     const { data: reqData } = await supabase
       .from('staff_requests')
@@ -526,23 +578,26 @@ export default function OtaDutyApp() {
       )}
     </div>
   )}
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">選擇 Duty Pattern</label>
-                  <div className="grid grid-cols-2 gap-2">
-{DUTY_PATTERNS.map(p => (
-  <div
-    key={p.id}
-    onClick={() => { if (!defaultConfig.isLocked || isAdmin) setSelectedPattern(p.id) }}
-    className={`p-2 rounded-lg border cursor-pointer transition-all ${
-      selectedPattern === p.id ? 'border-emerald-600 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'
-    } ${defaultConfig.isLocked && !isAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
-  >
-    <div className="font-bold text-xs text-slate-900">{p.id}</div>
-    <div className="text-[10px] text-slate-500 truncate">{p.desc}</div>
+ {/* 選擇 Duty Pattern (極致縮小：打橫一行 6 格，無淺灰字) */}
+<div>
+  <label className="block font-semibold text-slate-700 mb-1.5 text-xs">選擇 Duty Pattern</label>
+  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+    {DUTY_PATTERNS.map(p => (
+      <button
+        key={p.id}
+        type="button"
+        onClick={() => { if (!defaultConfig.isLocked || isAdmin) setSelectedPattern(p.id); }}
+        className={`py-2 px-1 rounded-md border text-center transition-all ${
+          selectedPattern === p.id 
+            ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold shadow-xs' 
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+        } ${defaultConfig.isLocked && !isAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
+      >
+        <span className="text-xs font-bold block truncate">{p.id}</span>
+      </button>
+    ))}
   </div>
-))}
 </div>
-                </div>
 {/* 簡化版 Excel 矩陣實況表 (Staff x Date) */}
 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
 <div className="flex items-center justify-between mb-3">
@@ -563,7 +618,7 @@ export default function OtaDutyApp() {
     </div>
   </div>
 
-  <div className="overflow-x-auto max-h-80 overflow-y-auto border border-slate-200 rounded-lg">
+ <div className="overflow-x-auto max-h-80 overflow-y-auto border border-slate-200 rounded-lg">
     <table className="w-full text-center text-[11px] border-collapse">
       <thead>
         <tr className="bg-slate-100 text-slate-700 sticky top-0 z-10 border-b border-slate-200">
