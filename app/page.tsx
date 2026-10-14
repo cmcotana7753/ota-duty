@@ -279,6 +279,10 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
     }
 
     if (!selectedStaff) {
+      if (selectedDates.length === 0) {
+    setWarningMsg('⚠️ 請先選擇日期！');
+    return;
+  }
       setWarningMsg('⚠️ 請先選擇您的姓名，再提交申請！');
       return;
     }
@@ -290,9 +294,17 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
       setWarningMsg(`⚠️ 提醒：${selectedStaff} 本月更期申請已達 ${userReqCount} 次！`);
     }
 
-    const { error: reqError } = await supabase.from('staff_requests').insert([
-      { staff_name: selectedStaff, request_date: selectedDate, pattern: selectedPattern }
-    ]);
+    // 將選取的所有連假日期一次過批量寫入 Supabase
+  const payload = selectedDates.map((d) => ({
+    staff_name: selectedStaff,
+    request_date: d,
+    pattern: selectedPattern,
+    created_at: new Date().toISOString(),
+  }));
+
+  const { error: reqError } = await supabase
+    .from('staff_requests')
+    .upsert(payload, { onConflict: 'staff_name,request_date' });
 
     if (reqError) {
       alert('儲存失敗: ' + reqError.message);
@@ -517,18 +529,54 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
                   </select>
                 </div>
 
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">選擇日期 ({defaultConfig.targetMonthNum}月份)</label>
-                  <input 
-                    type="date" 
-                    value={selectedDate} 
-                    min={`${defaultConfig.monthStr}-01`} 
-                    max={`${defaultConfig.monthStr}-${activeMonthConfig.daysInMonth}`} 
-                    onChange={(e) => setSelectedDate(e.target.value)} 
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300" 
-                    disabled={defaultConfig.isLocked && !isAdmin}
-                  />
-                </div>
+                {/* 自製買機票式連假日曆 */}
+<div className="mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+  <div className="flex items-center justify-between mb-2">
+    <label className="block font-semibold text-slate-700 text-xs">
+      📅 選擇日期 ({activeMonthConfig.monthStr})
+      {selectedPattern === 'AL' && <span className="ml-2 text-emerald-600 font-bold">(最多可連選 5 天)</span>}
+      {(selectedPattern === 'CL' || selectedPattern === '育嬰假') && <span className="ml-2 text-emerald-600 font-bold">(最多可連選 3 天)</span>}
+      {selectedPattern === 'ML' && <span className="ml-2 text-emerald-600 font-bold">(可不限日數連選)</span>}
+    </label>
+    {selectedDates.length > 1 && (
+      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+        已選取 {selectedDates.length} 天連假
+      </span>
+    )}
+  </div>
+
+  {/* 日曆格子 Grid */}
+  <div className="grid grid-cols-7 gap-1 text-center text-xs">
+    {['日', '一', '二', '三', '四', '五', '六'].map((d) => (
+      <div key={d} className="font-bold text-slate-400 py-1 text-[10px]">{d}</div>
+    ))}
+
+    {activeMonthConfig.daysArray.map((dayNum) => {
+      const formattedDay = String(dayNum).padStart(2, '0');
+      const dateStr = `${activeMonthConfig.monthStr}-${formattedDay}`;
+
+      const isSelected = selectedDates.includes(dateStr);
+      const isStart = rangeStartDate === dateStr;
+
+      return (
+        <button
+          key={dayNum}
+          type="button"
+          onClick={() => handleDateClick(dateStr)}
+          className={`py-2 rounded-lg font-semibold text-xs transition-all ${
+            isSelected
+              ? 'bg-emerald-600 text-white shadow-xs font-bold'
+              : isStart
+              ? 'bg-emerald-200 text-emerald-900 border-2 border-emerald-600'
+              : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-100'
+          }`}
+        >
+          {dayNum}
+        </button>
+      );
+    })}
+  </div>
+</div>
 <div className="text-xs text-slate-500 mt-1">
     💡 只可選擇 【{defaultConfig.targetMonthNum}月份】（1號至 {activeMonthConfig.daysInMonth}號）之內的日期。
   </div>
