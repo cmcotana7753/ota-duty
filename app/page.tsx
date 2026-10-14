@@ -86,56 +86,11 @@ export default function OtaDutyApp() {
   });
 
   const [viewMonthStr, setViewMonthStr] = useState('2026-11');
-
-  useEffect(() => {
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth(); 
-    const currentDate = today.getDate();
-
-    const targetDateObj = new Date(currentYear, currentMonth + 1, 1);
-    const targetYear = targetDateObj.getFullYear();
-    const targetMonthNum = targetDateObj.getMonth() + 1;
-
-    const isLocked = currentDate > 22;
-    const monthStr = `${targetYear}-${targetMonthNum < 10 ? '0' + targetMonthNum : targetMonthNum}`;
-
-    setDefaultConfig({ targetYear, targetMonthNum, isLocked, monthStr });
-    setViewMonthStr(monthStr);
-    setSelectedDate(`${monthStr}-01`);
-
-    const options = [];
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(today.getFullYear(), today.getMonth() + 1 - i, 1);
-      const y = d.getFullYear();
-      const m = d.getMonth() + 1;
-      const str = `${y}-${m < 10 ? '0' + m : m}`;
-      options.push({ label: `${y} 年 ${m} 月`, value: str });
-    }
-    setHistoryMonthOptions(options);
-  }, []);
-
-  const activeMonthConfig = useMemo(() => {
-    const [y, m] = viewMonthStr.split('-').map(Number);
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-    return { year: y, monthNum: m, daysInMonth, daysArray, monthStr: viewMonthStr };
-  }, [viewMonthStr]);
-
   const [historyMonthOptions, setHistoryMonthOptions] = useState<{ label: string; value: string }[]>([]);
 
-  const [selectedStaff, setSelectedStaff] = useState('');
-  const [selectedDate, setSelectedDate] = useState(`${defaultConfig.monthStr}-01`);
-  const [selectedPattern, setSelectedPattern] = useState(DUTY_PATTERNS[0].id);
-  
-  const [requests, setRequests] = useState<{
-    duty_pattern: string; staff_name: string; request_date: string; pattern: string 
-  }[]>([]);
-  const [matrixShifts, setMatrixShifts] = useState<Record<string, string>>({});
-  const [successMsg, setSuccessMsg] = useState('');
-  const [warningMsg, setWarningMsg] = useState('');
-
+  // 永續香港公眾假期對照表 (自動覆蓋 2026 至 2028 年，免手動更改)
   const publicHolidays: Record<string, string> = {
+    // 2026 年
     '2026-01-01': '元旦',
     '2026-02-17': '農曆年初一',
     '2026-02-18': '農曆年初二',
@@ -152,13 +107,104 @@ export default function OtaDutyApp() {
     '2026-10-19': '重陽節',
     '2026-12-25': '聖誕節',
     '2026-12-26': '聖誕節後第一個周日',
+
+    // 2027 年 (自動支援，無需每年修改)
+    '2027-01-01': '元旦',
+    '2027-02-06': '農曆年初一',
+    '2027-02-08': '農曆年初三',
+    '2027-02-09': '農曆年初四 (補假)',
+    '2027-03-26': '耶穌受難節',
+    '2027-03-27': '耶穌受難節翌日',
+    '2027-03-29': '復活節星期一',
+    '2027-04-05': '清明節',
+    '2027-05-01': '勞動節',
+    '2027-05-13': '佛誕',
+    '2027-06-09': '端午節',
+    '2027-07-01': '香港特別行政區成立紀念日',
+    '2027-09-16': '中秋節翌日',
+    '2027-10-01': '國慶日',
+    '2027-10-08': '重陽節',
+    '2027-12-25': '聖誕節',
+    '2027-12-27': '聖誕節後第一個周日結連',
+
+    // 2028 年
+    '2028-01-03': '元旦翌日 (補假)',
+    '2028-01-26': '農曆年初一',
+    '2028-01-27': '農曆年初二',
+    '2028-01-28': '農曆年初三',
+    '2028-04-14': '耶穌受難節',
+    '2028-04-15': '耶穌受難節翌日',
+    '2028-04-17': '復活節星期一',
+    '2028-04-04': '清明節',
+    '2028-05-01': '勞動節',
+    '2028-05-02': '佛誕翌日',
+    '2028-05-29': '端午節',
+    '2028-07-01': '香港特別行政區成立紀念日',
+    '2028-10-02': '國慶日翌日',
+    '2028-10-06': '重陽節',
+    '2028-12-25': '聖誕節',
+    '2028-12-26': '聖誕節後第一個周日'
   };
+
+  useEffect(() => {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth(); 
+    const currentDate = today.getDate();
+
+    // 自動預設為下一個月 (例如現在 10月，會自動開 11月)
+    const targetDateObj = new Date(currentYear, currentMonth + 1, 1);
+    const targetYear = targetDateObj.getFullYear();
+    const targetMonthNum = targetDateObj.getMonth() + 1;
+
+    const isLocked = currentDate > 22;
+    const monthStr = `${targetYear}-${targetMonthNum < 10 ? '0' + targetMonthNum : targetMonthNum}`;
+
+    setDefaultConfig({ targetYear, targetMonthNum, isLocked, monthStr });
+    setViewMonthStr(monthStr);
+    setSelectedDate(`${monthStr}-01`);
+
+    // 動態產生過去 2 個月至未來 18 個月嘅下拉選單（自動跨年份，包括 2027, 2028...）
+    const options = [];
+    for (let i = -2; i < 18; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const str = `${y}-${m < 10 ? '0' + m : m}`;
+      options.push({ label: `${y} 年 ${m} 月`, value: str });
+    }
+    setHistoryMonthOptions(options);
+  }, []);
+
+  const activeMonthConfig = useMemo(() => {
+    const [y, m] = viewMonthStr.split('-').map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+    return { year: y, monthNum: m, daysInMonth, daysArray, monthStr: viewMonthStr };
+  }, [viewMonthStr]);
+
+  const [selectedStaff, setSelectedStaff] = useState('');
+  const [selectedDate, setSelectedDate] = useState(`${defaultConfig.monthStr}-01`);
+  const [selectedPattern, setSelectedPattern] = useState(DUTY_PATTERNS[0].id);
+  
+  const [requests, setRequests] = useState<{
+    duty_pattern: string; staff_name: string; request_date: string; pattern: string 
+  }[]>([]);
+  const [matrixShifts, setMatrixShifts] = useState<Record<string, string>>({});
+  const [successMsg, setSuccessMsg] = useState('');
+  const [warningMsg, setWarningMsg] = useState('');
 
   const checkIsHolidayOrWeekend = (dateStr: string) => {
     if (!dateStr) return false;
     const dateObj = new Date(dateStr);
     const dayOfWeek = dateObj.getDay(); 
     return Boolean(publicHolidays[dateStr] || dayOfWeek === 0 || dayOfWeek === 6);
+  };
+
+  const getWeekDayName = (dateStr: string) => {
+    const days = ['日', '一', '二', '三', '四', '五', '六'];
+    const d = new Date(dateStr);
+    return days[d.getDay()];
   };
 
   useEffect(() => {
@@ -218,7 +264,6 @@ export default function OtaDutyApp() {
     return false;
   };
 
-  // 判斷某一日係屬於第幾個星期 (1至4週)
   const getWeekNumByDay = (dayNum: number): 1 | 2 | 3 | 4 => {
     if (dayNum <= 7) return 1;
     if (dayNum <= 14) return 2;
@@ -226,7 +271,6 @@ export default function OtaDutyApp() {
     return 4;
   };
 
-  // 🤖 智能一鍵公平自動排更演算法 (根據每週浮動名單豁免)
   const executeSmartAutoSchedule = async () => {
     setShowAutoModal(false);
     setIsAutoScheduling(true);
@@ -234,7 +278,6 @@ export default function OtaDutyApp() {
     let newMatrix = { ...matrixShifts };
     let upsertBatch: { staff_name: string; duty_date: string; pattern: string }[] = [];
 
-    // 處理 Request（若該日在該星期被該 staff 剔咗豁免，則略過）
     requests.forEach(r => {
       const dayNum = parseInt(r.request_date.split('-')[2], 10);
       const wNum = getWeekNumByDay(dayNum);
@@ -255,7 +298,6 @@ export default function OtaDutyApp() {
       }
     });
 
-    // 每週每位有效同事至少 1 日 O
     const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
     activeMonthConfig.daysArray.forEach(day => {
       const wNum = getWeekNumByDay(day);
@@ -287,7 +329,6 @@ export default function OtaDutyApp() {
       });
     });
 
-    // 每日人手與更次分派
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
       const wNum = getWeekNumByDay(day);
@@ -352,7 +393,6 @@ export default function OtaDutyApp() {
       });
     });
 
-    // 確保每位同事在各自有效週內合共剛好有 4 日 DO
     STAFF_LIST.forEach(staff => {
       let doCount = activeMonthConfig.daysArray.filter(day => {
         const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
@@ -724,7 +764,6 @@ export default function OtaDutyApp() {
               <button onClick={() => setShowAutoModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
             
-            {/* 星期 Tab 切換 */}
             <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
               {([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).map(w => (
                 <button
@@ -987,7 +1026,7 @@ export default function OtaDutyApp() {
                 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-                      📊 {defaultConfig.targetMonthNum}月份 OTA Request 簡化版 Excel 實況表
+                      📊 {activeMonthConfig.monthNum}月份 OTA Request 簡化版 Excel 實況表
                     </h3>
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
@@ -1011,9 +1050,13 @@ export default function OtaDutyApp() {
                           </th>
                           {activeMonthConfig.daysArray.map((dayNum) => {
                             const formattedDay = String(dayNum).padStart(2, '0');
+                            const dateStr = `${activeMonthConfig.monthStr}-${formattedDay}`;
+                            const weekDay = getWeekDayName(dateStr);
+                            const isHoliday = checkIsHolidayOrWeekend(dateStr);
                             return (
-                              <th key={dayNum} className="p-2 border-r border-slate-200 font-medium whitespace-nowrap min-w-[45px]">
-                                {formattedDay}日
+                              <th key={dayNum} className={`p-1.5 border-r border-slate-200 font-medium whitespace-nowrap min-w-[45px] ${isHoliday ? 'bg-rose-100 text-rose-800' : ''}`} title={publicHolidays[dateStr] || ''}>
+                                <div>{formattedDay}</div>
+                                <div className="text-[9px] opacity-80">({weekDay})</div>
                               </th>
                             );
                           })}
@@ -1147,9 +1190,17 @@ export default function OtaDutyApp() {
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 border-b">
                       <th className="p-2 font-bold min-w-[130px] max-w-[130px] sticky left-0 bg-slate-100 z-10 border-r shadow-sm truncate">員工姓名</th>
-                      {activeMonthConfig.daysArray.map(day => (
-                        <th key={day} className="p-1.5 text-center min-w-[65px] max-w-[65px] border-l font-semibold">{activeMonthConfig.monthNum}/{day}</th>
-                      ))}
+                      {activeMonthConfig.daysArray.map(day => {
+                        const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+                        const weekDay = getWeekDayName(dateStr);
+                        const isHoliday = checkIsHolidayOrWeekend(dateStr);
+                        return (
+                          <th key={day} className={`p-1.5 text-center min-w-[65px] max-w-[65px] border-l font-semibold ${isHoliday ? 'bg-rose-100 text-rose-800' : ''}`} title={publicHolidays[dateStr] || ''}>
+                            <div>{activeMonthConfig.monthNum}/{day}</div>
+                            <div className="text-[9px] opacity-80">({weekDay})</div>
+                          </th>
+                        );
+                      })}
                       <th className="p-2 text-center font-bold min-w-[90px] max-w-[90px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">全月工時</th>
                     </tr>
                   </thead>
@@ -1163,6 +1214,7 @@ export default function OtaDutyApp() {
                           <td className="p-2 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm truncate max-w-[130px]">{staff}</td>
                           {activeMonthConfig.daysArray.map(day => {
                             const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
+                            const isHoliday = checkIsHolidayOrWeekend(dateStr);
                             let currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
                             if (isAutoR(staff, dateStr)) currentVal = 'R';
 
@@ -1171,7 +1223,6 @@ export default function OtaDutyApp() {
                             const isAnOver = currentVal === 'AN' && getDayPatternCount(dateStr, 'AN') > 1;
                             const isMidOver = currentVal === '1000-1848' && getDayPatternCount(dateStr, '1000-1848') > 1;
                             
-                            const isHoliday = checkIsHolidayOrWeekend(dateStr);
                             const pCount = getDayPatternCount(dateStr, '1300-2148') + getDayPatternCount(dateStr, '1330-2218');
                             const effectiveACount = getEffectiveACount(dateStr);
 
@@ -1181,7 +1232,7 @@ export default function OtaDutyApp() {
                             const hasWarning = isAnOver || isMidOver || isPOver || isALack;
 
                             return (
-                              <td key={day} className={`p-0.5 border-l text-center ${hasWarning ? 'bg-rose-50' : ''}`}>
+                              <td key={day} className={`p-0.5 border-l text-center ${hasWarning ? 'bg-rose-50' : isHoliday ? 'bg-rose-50/40' : ''}`}>
                                 <div className={`p-1 text-[10px] font-semibold rounded truncate ${
                                   currentVal === '0800-1648' ? 'bg-emerald-50 text-emerald-800' :
                                   currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800' :
@@ -1216,7 +1267,7 @@ export default function OtaDutyApp() {
                 <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Edit3 className="w-4 h-4 text-emerald-600" /> 主管全月總覽與一鍵自動排更
                 </h2>
-                <p className="text-[11px] text-slate-500 mt-0.5">點擊自動排更可按星期（Week 1-4）自由勾選浮動免出 Duty 同事。</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">跨年公眾假期已自動識別，並支援無限向後選取未來年份。</p>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
@@ -1258,9 +1309,17 @@ export default function OtaDutyApp() {
                   <thead>
                     <tr className="bg-slate-100 text-slate-700 border-b">
                       <th className="p-2 font-bold min-w-[130px] max-w-[130px] sticky left-0 bg-slate-100 z-10 border-r shadow-sm truncate">員工姓名</th>
-                      {activeMonthConfig.daysArray.map(day => (
-                        <th key={day} className="p-1.5 text-center min-w-[70px] max-w-[70px] border-l font-semibold">{activeMonthConfig.monthNum}/{day}</th>
-                      ))}
+                      {activeMonthConfig.daysArray.map(day => {
+                        const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+                        const weekDay = getWeekDayName(dateStr);
+                        const isHoliday = checkIsHolidayOrWeekend(dateStr);
+                        return (
+                          <th key={day} className={`p-1.5 text-center min-w-[70px] max-w-[70px] border-l font-semibold ${isHoliday ? 'bg-rose-100 text-rose-800' : ''}`} title={publicHolidays[dateStr] || ''}>
+                            <div>{activeMonthConfig.monthNum}/{day}</div>
+                            <div className="text-[9px] opacity-80">({weekDay})</div>
+                          </th>
+                        );
+                      })}
                       <th className="p-2 text-center font-bold min-w-[110px] border-l bg-slate-100">DO/O 規則</th>
                       <th className="p-2 text-center font-bold min-w-[95px] max-w-[95px] sticky right-0 bg-slate-100 z-10 border-l shadow-sm">總工時</th>
                     </tr>
@@ -1278,6 +1337,7 @@ export default function OtaDutyApp() {
                           <td className="p-2 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm truncate max-w-[130px]">{staff}</td>
                           {activeMonthConfig.daysArray.map(day => {
                             const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
+                            const isHoliday = checkIsHolidayOrWeekend(dateStr);
                             let currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
                             const hasAutoR = isAutoR(staff, dateStr);
                             if (hasAutoR) currentVal = 'R';
@@ -1285,7 +1345,7 @@ export default function OtaDutyApp() {
                             const hasRequested = isRequestedByStaff(staff, dateStr, currentVal);
 
                             return (
-                              <td key={day} className="p-0.5 border-l text-center">
+                              <td key={day} className={`p-0.5 border-l text-center ${isHoliday ? 'bg-rose-50/50' : ''}`}>
                                 <div className="flex items-center gap-0.5">
                                   <select
                                     value={currentVal}
@@ -1388,7 +1448,7 @@ export default function OtaDutyApp() {
                     let rCount = 0;
                     let pCount = 0;
 
-                    activeMonthConfig.daysArray.forEach(day => {
+                    activeMonthConfig.daysArray.map(day => {
                       const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
                       let pattern = matrixShifts[`${staff}-${dateStr}`];
                       if (isAutoR(staff, dateStr)) pattern = 'R';
