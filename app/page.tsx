@@ -639,33 +639,41 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
   </div>
   )}
 
-  {/* 每日熱度統計卡片 */}
-  {selectedDate && selectedDateStats && (
-    <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-semibold text-slate-700">
-          📅 {selectedDate} 申請狀況：
-        </span>
-        <span className={`px-2 py-0.5 rounded-full font-bold ${
-          selectedDateStats.total >= 3 
-            ? 'bg-amber-100 text-amber-800' 
-            : 'bg-emerald-100 text-emerald-800'
-        }`}>
-          {selectedDateStats.total === 0 ? '目前無人申請' : `共 ${selectedDateStats.total} 人申請`}
-        </span>
-      </div>
-
-      {selectedDateStats.total > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {Object.entries(selectedDateStats.patterns).map(([pattern, count]) => (
-            <span key={pattern} className="bg-white border border-slate-200 px-2 py-1 rounded shadow-sm text-slate-600">
-              {pattern}: <strong className="text-slate-900">{count}</strong>人
-            </span>
-          ))}
-        </div>
-      )}
+ {/* 📅 每日申請人名詳情卡片 */}
+{selectedDates.length > 0 && (
+  <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-2">
+    <div className="flex items-center justify-between font-semibold text-slate-700">
+      <span>📅 選擇日期申請狀況與人名：</span>
+      <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full text-[11px]">
+        共 {requests.filter(r => selectedDates.includes(r.request_date)).length} 項申請
+      </span>
     </div>
-  )}
+
+    {selectedDates.map(dateStr => {
+      const dayReqs = requests.filter(r => r.request_date === dateStr);
+      return (
+        <div key={dateStr} className="bg-white p-2 rounded border border-slate-100">
+          <div className="font-bold text-slate-600 mb-1">{dateStr}</div>
+          {dayReqs.length === 0 ? (
+            <div className="text-slate-400 italic text-[11px]">目前暫無人申請</div>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {dayReqs.map((req, idx) => (
+                <span 
+                  key={idx} 
+                  className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded text-[11px]"
+                >
+                  <span className="font-bold text-emerald-900">{req.staff_name}</span>
+                  <span className="bg-emerald-600 text-white px-1 rounded text-[10px]">{req.pattern}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    })}
+  </div>
+)}
  
 {/* 簡化版 Excel 矩陣實況表 (Staff x Date) */}
 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
