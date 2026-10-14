@@ -56,6 +56,7 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   // 1. 全自動計算預設目標月份 (改為 State + useEffect，避免 Next.js SSR / Prerender 報錯)
   const [defaultConfig, setDefaultConfig] = useState({
@@ -489,7 +490,7 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
         
         {/* 版面 1：同事意願申請與取消 (自動固定為當前目標月份) */}
         {activeTab === 'board1' && (
-          <div className="max-w-5xl mx-auto space-y-4">
+          <div className="max-w-6xl mx-auto space-y-4">
             
             {/* 截更提示 Banner */}
             {defaultConfig.isLocked && !isAdmin && (
@@ -529,74 +530,94 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
                   </select>
                 </div>
 
-                {/* 自製買機票式連假日曆 */}
-<div className="mb-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
-  <div className="flex items-center justify-between mb-2">
+ {/* 📅 日期選擇區（預設收埋，點擊後彈出視窗） */}
+<div className="mb-4">
+  <div className="flex items-center justify-between mb-1">
     <label className="block font-semibold text-slate-700 text-xs">
-      📅 選擇日期 ({activeMonthConfig.monthStr})
-      {selectedPattern === 'AL' && <span className="ml-2 text-emerald-600 font-bold">(最多可連選 5 天)</span>}
-      {(selectedPattern === 'CL' || selectedPattern === '育嬰假') && <span className="ml-2 text-emerald-600 font-bold">(最多可連選 3 天)</span>}
-      {selectedPattern === 'ML' && <span className="ml-2 text-emerald-600 font-bold">(可不限日數連選)</span>}
+      選擇日期 ({activeMonthConfig.monthStr})
     </label>
-    {selectedDates.length > 1 && (
-      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-        已選取 {selectedDates.length} 天連假
-      </span>
-    )}
-  </div>
-
-  {/* 日曆格子 Grid */}
-  <div className="grid grid-cols-7 gap-1 text-center text-xs">
-    {['日', '一', '二', '三', '四', '五', '六'].map((d) => (
-      <div key={d} className="font-bold text-slate-400 py-1 text-[10px]">{d}</div>
-    ))}
-
-    {activeMonthConfig.daysArray.map((dayNum) => {
-      const formattedDay = String(dayNum).padStart(2, '0');
-      const dateStr = `${activeMonthConfig.monthStr}-${formattedDay}`;
-
-      const isSelected = selectedDates.includes(dateStr);
-      const isStart = rangeStartDate === dateStr;
-
-      return (
-        <button
-          key={dayNum}
-          type="button"
-          onClick={() => handleDateClick(dateStr)}
-          className={`py-2 rounded-lg font-semibold text-xs transition-all ${
-            isSelected
-              ? 'bg-emerald-600 text-white shadow-xs font-bold'
-              : isStart
-              ? 'bg-emerald-200 text-emerald-900 border-2 border-emerald-600'
-              : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-100'
-          }`}
-        >
-          {dayNum}
-        </button>
-      );
-    })}
+    <button
+      type="button"
+      onClick={() => setIsCalendarOpen(true)}
+      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold transition-all shadow-xs"
+    >
+      📅 {selectedDates.length > 0 ? `已選 ${selectedDates.length} 日: ${selectedDates[0]} ...` : '點擊選擇日期 / 連假'}
+    </button>
   </div>
 </div>
-<div className="text-xs text-slate-500 mt-1">
-    💡 只可選擇 【{defaultConfig.targetMonthNum}月份】（1號至 {activeMonthConfig.daysInMonth}號）之內的日期。
-  </div>
-  {/* 週末 / 公眾假期提醒標籤 */}
-  {holidayInfo && (
-    <div className={`mt-2 p-2.5 rounded-lg text-xs font-medium flex items-center gap-2 ${
-      holidayInfo.type === 'PH' 
-        ? 'bg-purple-50 text-purple-800 border border-purple-200' 
-        : 'bg-amber-50 text-amber-800 border border-amber-200'
-    }`}>
-      <span className="text-base">{holidayInfo.type === 'PH' ? '🚩' : '⚠️'}</span>
-      <div>
-        <span className="font-bold">{holidayInfo.label}</span>
-        <p className="text-[11px] opacity-80 mt-0.5">
-          {holidayInfo.type === 'PH' 
-            ? '提示：此日子為公眾假期，請注意假期 Request 規則。' 
-            : '提示：此日子為週末，請確認是否有輪值或 Request 限制。'}
-        </p>
+
+{/* 彈出式 Modal 日曆視窗 (當 isCalendarOpen 係 true 時先彈出) */}
+{isCalendarOpen && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+    <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-4 animate-in fade-in zoom-in-95 duration-150">
+      
+      {/* 彈窗標題與關閉掣 */}
+      <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
+        <div>
+          <h3 className="font-bold text-slate-800 text-sm">選擇更期日期 ({activeMonthConfig.monthStr})</h3>
+          <p className="text-[11px] text-slate-500">
+            {selectedPattern === 'AL' && '✨ AL 可連續選取最多 5 天'}
+            {(selectedPattern === 'CL' || selectedPattern === '育嬰假') && '✨ 該假別可連續選取最多 3 天'}
+            {selectedPattern === 'ML' && '✨ ML 可不限日數連選'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsCalendarOpen(false)}
+          className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs"
+        >
+          ✕
+        </button>
       </div>
+
+      {/* 網格日曆 Grid */}
+      <div className="grid grid-cols-7 gap-1.5 text-center text-xs mb-4">
+        {['日', '一', '二', '三', '四', '五', '六'].map((d) => (
+          <div key={d} className="font-bold text-slate-400 py-1 text-[11px]">{d}</div>
+        ))}
+
+        {activeMonthConfig.daysArray.map((dayNum) => {
+          const formattedDay = String(dayNum).padStart(2, '0');
+          const dateStr = `${activeMonthConfig.monthStr}-${formattedDay}`;
+
+          const isSelected = selectedDates.includes(dateStr);
+          const isStart = rangeStartDate === dateStr;
+
+          return (
+            <button
+              key={dayNum}
+              type="button"
+              onClick={() => handleDateClick(dateStr)}
+              className={`py-2.5 rounded-xl font-bold text-xs transition-all ${
+                isSelected
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : isStart
+                  ? 'bg-emerald-200 text-emerald-900 border-2 border-emerald-600'
+                  : 'bg-slate-50 text-slate-700 hover:bg-slate-200 border border-slate-100'
+              }`}
+            >
+              {dayNum}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 底部確認按鈕 */}
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+        <span className="text-xs font-semibold text-emerald-700">
+          已選取：{selectedDates.length} 天
+        </span>
+        <button
+          type="button"
+          onClick={() => setIsCalendarOpen(false)}
+          className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm"
+        >
+          確定完成
+        </button>
+      </div>
+
     </div>
+  </div>
   )}
 
   {/* 每日熱度統計卡片 */}
