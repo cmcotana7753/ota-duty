@@ -34,13 +34,11 @@ const STAFF_LIST = [
   'Wong Hei Laam, Hazel'
 ];
 
-// 2. 只可排 A 更且不計入核心人手的同事
 const ONLY_A_NO_COUNT_STAFF = [
   'Lo Hiu Yu',
   'Wong Hei Laam, Hazel'
 ];
 
-// 3. 優先排 A 更的同事
 const PREFER_A_STAFF = [
   'Tong Yiu Bun',
   'Leung Ka Ki'
@@ -70,12 +68,15 @@ export default function OtaDutyApp() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isAutoScheduling, setIsAutoScheduling] = useState(false);
 
-  // 浮動豁免彈窗狀態
+  // 🤖 按星期浮動豁免名單狀態 (Week 1, Week 2, Week 3, Week 4)
   const [showAutoModal, setShowAutoModal] = useState(false);
-  const [tempExcludedStaff, setTempExcludedStaff] = useState<string[]>([
-    'Ng Wai Hung Samuel', 
-    'Lam Ngan Sze Jessie'
-  ]);
+  const [activeWeekTab, setActiveWeekTab] = useState<1 | 2 | 3 | 4>(1);
+  const [weeklyExcludedStaff, setWeeklyExcludedStaff] = useState<Record<1 | 2 | 3 | 4, string[]>>({
+    1: ['Ng Wai Hung Samuel', 'Lam Ngan Sze Jessie'],
+    2: [],
+    3: [],
+    4: []
+  });
 
   const [defaultConfig, setDefaultConfig] = useState({
     targetYear: 2026,
@@ -217,7 +218,15 @@ export default function OtaDutyApp() {
     return false;
   };
 
-  // 🤖 智能一鍵公平自動排更演算法 (根據彈窗選出的浮動不需出更名單)
+  // 判斷某一日係屬於第幾個星期 (1至4週)
+  const getWeekNumByDay = (dayNum: number): 1 | 2 | 3 | 4 => {
+    if (dayNum <= 7) return 1;
+    if (dayNum <= 14) return 2;
+    if (dayNum <= 21) return 3;
+    return 4;
+  };
+
+  // 🤖 智能一鍵公平自動排更演算法 (根據每週浮動名單豁免)
   const executeSmartAutoSchedule = async () => {
     setShowAutoModal(false);
     setIsAutoScheduling(true);
@@ -225,34 +234,40 @@ export default function OtaDutyApp() {
     let newMatrix = { ...matrixShifts };
     let upsertBatch: { staff_name: string; duty_date: string; pattern: string }[] = [];
 
-    const activeValidStaff = STAFF_LIST.filter(s => !tempExcludedStaff.includes(s));
-
+    // 處理 Request（若該日在該星期被該 staff 剔咗豁免，則略過）
     requests.forEach(r => {
-      if (tempExcludedStaff.includes(r.staff_name)) return;
+      const dayNum = parseInt(r.request_date.split('-')[2], 10);
+      const wNum = getWeekNumByDay(dayNum);
+      if (weeklyExcludedStaff[wNum].includes(r.staff_name)) return;
+
       newMatrix[`${r.staff_name}-${r.request_date}`] = r.pattern;
       upsertBatch.push({ staff_name: r.staff_name, duty_date: r.request_date, pattern: r.pattern });
       if (r.pattern === 'AN') {
         const nextD = getNextDateStr(r.request_date);
         if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
-          newMatrix[`${r.staff_name}-${nextD}`] = 'R';
-          upsertBatch.push({ staff_name: r.staff_name, duty_date: nextD, pattern: 'R' });
+          const nextDayNum = parseInt(nextD.split('-')[2], 10);
+          const nextWNum = getWeekNumByDay(nextDayNum);
+          if (!weeklyExcludedStaff[nextWNum].includes(r.staff_name)) {
+            newMatrix[`${r.staff_name}-${nextD}`] = 'R';
+            upsertBatch.push({ staff_name: r.staff_name, duty_date: nextD, pattern: 'R' });
+          }
         }
       }
     });
 
     // 每週每位有效同事至少 1 日 O
-    const weeks: number[][] = [];
-    let currentWeek: number[] = [];
-    activeMonthConfig.daysArray.forEach((day, idx) => {
-      currentWeek.push(day);
-      if (currentWeek.length === 7 || idx === activeMonthConfig.daysArray.length - 1) {
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
+    const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
+    activeMonthConfig.daysArray.forEach(day => {
+      const wNum = getWeekNumByDay(day);
+      weeks[wNum].push(day);
     });
 
-    activeValidStaff.forEach(staff => {
-      weeks.forEach((weekDays) => {
+    ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
+      const weekDays = weeks[wNum];
+      const excludedInWeek = weeklyExcludedStaff[wNum];
+      const activeStaffInWeek = STAFF_LIST.filter(s => !excludedInWeek.includes(s));
+
+      activeStaffInWeek.forEach(staff => {
         const hasOInWeek = weekDays.some(day => {
           const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
           const p = newMatrix[`${staff}-${dStr}`];
@@ -275,6 +290,10 @@ export default function OtaDutyApp() {
     // 每日人手與更次分派
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+      const wNum = getWeekNumByDay(day);
+      const excludedInWeek = weeklyExcludedStaff[wNum];
+      const activeValidStaff = STAFF_LIST.filter(s => !excludedInWeek.includes(s));
+
       const isHoliday = checkIsHolidayOrWeekend(dateStr);
       const minA = isHoliday ? 3 : 6;
       const targetP = isHoliday ? 1 : 2;
@@ -309,8 +328,12 @@ export default function OtaDutyApp() {
             currentAN++;
             const nextD = getNextDateStr(dateStr);
             if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
-              newMatrix[`${staff}-${nextD}`] = 'R';
-              upsertBatch.push({ staff_name: staff, duty_date: nextD, pattern: 'R' });
+              const nextDayNum = parseInt(nextD.split('-')[2], 10);
+              const nextWNum = getWeekNumByDay(nextDayNum);
+              if (!weeklyExcludedStaff[nextWNum].includes(staff)) {
+                newMatrix[`${staff}-${nextD}`] = 'R';
+                upsertBatch.push({ staff_name: staff, duty_date: nextD, pattern: 'R' });
+              }
             }
           }
           else if (currentP < targetP) {
@@ -329,8 +352,8 @@ export default function OtaDutyApp() {
       });
     });
 
-    // 確保每位有效同事剛好有 4 日 DO
-    activeValidStaff.forEach(staff => {
+    // 確保每位同事在各自有效週內合共剛好有 4 日 DO
+    STAFF_LIST.forEach(staff => {
       let doCount = activeMonthConfig.daysArray.filter(day => {
         const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
         return newMatrix[`${staff}-${dStr}`] === 'DO';
@@ -340,6 +363,9 @@ export default function OtaDutyApp() {
         for (const day of activeMonthConfig.daysArray) {
           if (doCount >= 4) break;
           const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+          const wNum = getWeekNumByDay(day);
+          if (weeklyExcludedStaff[wNum].includes(staff)) continue;
+
           const current = newMatrix[`${staff}-${dStr}`];
           if ((current === 'O' || !current) && !isAutoR(staff, dStr)) {
             newMatrix[`${staff}-${dStr}`] = 'DO';
@@ -355,7 +381,7 @@ export default function OtaDutyApp() {
       alert('自動排更儲存失敗: ' + error.message);
     } else {
       setMatrixShifts(newMatrix);
-      setSuccessMsg('✨ 成功完成一鍵公平自動排更！已根據浮動名單豁免指定同事，並完美鋪排更次！');
+      setSuccessMsg('✨ 成功完成按星期浮動豁免的一鍵自動排更！');
       fetchData();
     }
     setIsAutoScheduling(false);
@@ -687,24 +713,41 @@ export default function OtaDutyApp() {
         </div>
       )}
 
-      {/* 🤖 浮動豁免名單挑選彈窗 */}
+      {/* 🤖 按星期浮動豁免名單挑選彈窗 */}
       {showAutoModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-200 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-600" /> 選擇本週/本月不需出 Duty 嘅浮動同事 (DSC豁免)
+                <Sparkles className="w-4 h-4 text-purple-600" /> 按星期設定不需出 Duty 嘅浮動同事 (DSC豁免)
               </h3>
               <button onClick={() => setShowAutoModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
             </div>
             
+            {/* 星期 Tab 切換 */}
+            <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
+              {([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).map(w => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setActiveWeekTab(w)}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${
+                    activeWeekTab === w ? 'bg-white text-purple-700 shadow-sm' : 'text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  第 {w} 週 {w === 1 ? '(1-7日)' : w === 2 ? '(8-14日)' : w === 3 ? '(15-21日)' : '(22-尾)'}
+                </button>
+              ))}
+            </div>
+
             <p className="text-xs text-slate-500">
-              請勾選今次自動排高中不需要系統分配更次嘅同事（例如 DSC 同事或外調人員）：
+              請勾選【第 {activeWeekTab} 週】不需要系統分配更次嘅同事：
             </p>
 
             <div className="max-h-60 overflow-y-auto space-y-1.5 border border-slate-200 p-3 rounded-lg bg-slate-50">
               {STAFF_LIST.map(staff => {
-                const isChecked = tempExcludedStaff.includes(staff);
+                const currentWeekList = weeklyExcludedStaff[activeWeekTab];
+                const isChecked = currentWeekList.includes(staff);
                 return (
                   <label key={staff} className="flex items-center justify-between p-2 rounded bg-white border border-slate-100 hover:bg-slate-100 cursor-pointer text-xs font-semibold">
                     <span>{staff}</span>
@@ -712,11 +755,16 @@ export default function OtaDutyApp() {
                       type="checkbox"
                       checked={isChecked}
                       onChange={(e) => {
+                        let updated = [...currentWeekList];
                         if (e.target.checked) {
-                          setTempExcludedStaff([...tempExcludedStaff, staff]);
+                          updated.push(staff);
                         } else {
-                          setTempExcludedStaff(tempExcludedStaff.filter(s => s !== staff));
+                          updated = updated.filter(s => s !== staff);
                         }
+                        setWeeklyExcludedStaff({
+                          ...weeklyExcludedStaff,
+                          [activeWeekTab]: updated
+                        });
                       }}
                       className="w-4 h-4 text-purple-600 rounded border-slate-300 focus:ring-purple-500"
                     />
@@ -1168,7 +1216,7 @@ export default function OtaDutyApp() {
                 <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Edit3 className="w-4 h-4 text-emerald-600" /> 主管全月總覽與一鍵自動排更
                 </h2>
-                <p className="text-[11px] text-slate-500 mt-0.5">點擊自動排更可彈出選單自由勾選浮動免出 Duty 同事。</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">點擊自動排更可按星期（Week 1-4）自由勾選浮動免出 Duty 同事。</p>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
@@ -1295,7 +1343,7 @@ export default function OtaDutyApp() {
           </div>
         )}
 
-        {/* 版面 4：公平分統計 */}
+        {/* 版面 4：公平分派統計 */}
         {activeTab === 'board3' && isAdmin && (
           <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
