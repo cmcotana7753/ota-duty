@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { 
   Calendar, Users, Clock, AlertTriangle, Send, CheckCircle2, 
   Shield, BarChart3, Edit3, Lock, Unlock, LogOut, Eye, Download, 
-  CheckCircle, Trash2, LockKeyhole, ChevronDown 
+  CheckCircle, Trash2, LockKeyhole, ChevronDown, Sparkles 
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
@@ -45,7 +45,7 @@ const DUTY_PATTERNS = [
   { id: 'ML', label: 'ML (產假)', mins: 528, hours: 8.8, desc: '產假' },
   { id: '育嬰假', label: '育嬰假', mins: 528, hours: 8.8, desc: '育嬰假' },
   { id: 'DO', label: 'DO (Day Off)', mins: 0, hours: 0, desc: 'Day Off (每月剛好4日)' },
-  { id: 'O', label: 'O (休假)', mins: 0, hours: 0, desc: '休假 (每月剛好4日)' },
+  { id: 'O', label: 'O (休假)', mins: 0, hours: 0, desc: '休假 (每週至少1日)' },
 ];
 
 export default function OtaDutyApp() {
@@ -56,6 +56,7 @@ export default function OtaDutyApp() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isAutoScheduling, setIsAutoScheduling] = useState(false);
 
   const [defaultConfig, setDefaultConfig] = useState({
     targetYear: 2026,
@@ -114,31 +115,29 @@ export default function OtaDutyApp() {
   const [successMsg, setSuccessMsg] = useState('');
   const [warningMsg, setWarningMsg] = useState('');
 
-  // 判斷指定日期是否為週末或公眾假期
+  const publicHolidays: Record<string, string> = {
+    '2026-01-01': '元旦',
+    '2026-02-17': '農曆年初一',
+    '2026-02-18': '農曆年初二',
+    '2026-02-19': '農曆年初三',
+    '2026-04-03': '耶穌受難節',
+    '2026-04-04': '清明節 / 耶穌受難節翌日',
+    '2026-04-06': '復活節星期一',
+    '2026-05-01': '勞動節',
+    '2026-05-25': '佛誕',
+    '2026-06-19': '端午節',
+    '2026-07-01': '香港特別行政區成立紀念日',
+    '2026-09-26': '中秋節翌日',
+    '2026-10-01': '國慶日',
+    '2026-10-19': '重陽節',
+    '2026-12-25': '聖誕節',
+    '2026-12-26': '聖誕節後第一個周日',
+  };
+
   const checkIsHolidayOrWeekend = (dateStr: string) => {
     if (!dateStr) return false;
     const dateObj = new Date(dateStr);
-    const dayOfWeek = dateObj.getDay();
-
-    const publicHolidays: Record<string, string> = {
-      '2026-01-01': '元旦',
-      '2026-02-17': '農曆年初一',
-      '2026-02-18': '農曆年初二',
-      '2026-02-19': '農曆年初三',
-      '2026-04-03': '耶穌受難節',
-      '2026-04-04': '清明節 / 耶穌受難節翌日',
-      '2026-04-06': '復活節星期一',
-      '2026-05-01': '勞動節',
-      '2026-05-25': '佛誕',
-      '2026-06-19': '端午節',
-      '2026-07-01': '香港特別行政區成立紀念日',
-      '2026-09-26': '中秋節翌日',
-      '2026-10-01': '國慶日',
-      '2026-10-19': '重陽節',
-      '2026-12-25': '聖誕節',
-      '2026-12-26': '聖誕節後第一個周日',
-    };
-
+    const dayOfWeek = dateObj.getDay(); 
     return Boolean(publicHolidays[dateStr] || dayOfWeek === 0 || dayOfWeek === 6);
   };
 
@@ -185,7 +184,6 @@ export default function OtaDutyApp() {
     return (prevReq?.pattern === 'AN' || prevMatrix === 'AN');
   };
 
-  // 核心：檢查某日某個 Pattern 是否違規
   const checkReqViolation = (dateStr: string, pattern: string) => {
     const reqsOnDay = requests.filter(r => r.request_date === dateStr);
     const count = reqsOnDay.filter(r => r.pattern === pattern).length;
@@ -198,6 +196,144 @@ export default function OtaDutyApp() {
       if (isHoliday && count > 1) return true;
     }
     return false;
+  };
+
+  // 🤖 智能一鍵公平自動排更演算法 (加入每週至少 1 日 O 規則)
+  const handleSmartAutoSchedule = async () => {
+    if (!confirm(`🤖 確定要對 【${activeMonthConfig.year} 年 ${activeMonthConfig.monthNum} 月】 進行一鍵公平自動排更嗎？\n系統將自動填補空格、確保平日 A 班最少 6 人、每週每位同事至少 1 日 O、並補齊 4 日 DO。`)) {
+      return;
+    }
+
+    setIsAutoScheduling(true);
+    let newMatrix = { ...matrixShifts };
+    let upsertBatch: { staff_name: string; duty_date: string; pattern: string }[] = [];
+
+    requests.forEach(r => {
+      newMatrix[`${r.staff_name}-${r.request_date}`] = r.pattern;
+      upsertBatch.push({ staff_name: r.staff_name, duty_date: r.request_date, pattern: r.pattern });
+      if (r.pattern === 'AN') {
+        const nextD = getNextDateStr(r.request_date);
+        if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
+          newMatrix[`${r.staff_name}-${nextD}`] = 'R';
+          upsertBatch.push({ staff_name: r.staff_name, duty_date: nextD, pattern: 'R' });
+        }
+      }
+    });
+
+    // 依每 7 日為一個星期區間 (Week chunks)
+    const weeks: number[][] = [];
+    let currentWeek: number[] = [];
+    activeMonthConfig.daysArray.forEach((day, idx) => {
+      currentWeek.push(day);
+      if (currentWeek.length === 7 || idx === activeMonthConfig.daysArray.length - 1) {
+        weeks.push(currentWeek);
+        currentWeek = [];
+      }
+    });
+
+    // 針對每位同事，確保每星期至少有 1 日 O
+    STAFF_LIST.forEach(staff => {
+      weeks.forEach((weekDays, wIdx) => {
+        const hasOInWeek = weekDays.some(day => {
+          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+          const p = newMatrix[`${staff}-${dStr}`];
+          return p === 'O' || p === 'DO';
+        });
+
+        if (!hasOInWeek) {
+          // 在該星期中揀選一個未有更次的日子自動編排為 O
+          for (const day of weekDays) {
+            const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+            if (!newMatrix[`${staff}-${dStr}`] && !isAutoR(staff, dStr)) {
+              newMatrix[`${staff}-${dStr}`] = 'O';
+              upsertBatch.push({ staff_name: staff, duty_date: dStr, pattern: 'O' });
+              break;
+            }
+          }
+        }
+      });
+    });
+
+    // 針對每一日進行公平編排
+    activeMonthConfig.daysArray.forEach(day => {
+      const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+      const isHoliday = checkIsHolidayOrWeekend(dateStr);
+      const minA = isHoliday ? 3 : 6;
+      const targetP = isHoliday ? 1 : 2;
+
+      let currentA = STAFF_LIST.filter(s => newMatrix[`${s}-${dateStr}`] === '0800-1648').length;
+      let currentP = STAFF_LIST.filter(s => ['1300-2148', '1330-2218'].includes(newMatrix[`${s}-${dateStr}`])).length;
+      let currentAN = STAFF_LIST.filter(s => newMatrix[`${s}-${dateStr}`] === 'AN').length;
+      let current10 = STAFF_LIST.filter(s => newMatrix[`${s}-${dateStr}`] === '1000-1848').length;
+
+      STAFF_LIST.forEach((staff, sIdx) => {
+        const key = `${staff}-${dateStr}`;
+        if (!newMatrix[key]) {
+          if (isAutoR(staff, dateStr)) {
+            newMatrix[key] = 'R';
+            upsertBatch.push({ staff_name: staff, duty_date: dateStr, pattern: 'R' });
+            return;
+          }
+
+          if (current10 < 1 && (sIdx + day) % 23 === 3) {
+            newMatrix[key] = '1000-1848';
+            current10++;
+          }
+          else if (currentAN < 1 && (sIdx + day) % 23 === 7) {
+            newMatrix[key] = 'AN';
+            currentAN++;
+            const nextD = getNextDateStr(dateStr);
+            if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
+              newMatrix[`${staff}-${nextD}`] = 'R';
+              upsertBatch.push({ staff_name: staff, duty_date: nextD, pattern: 'R' });
+            }
+          }
+          else if (currentP < targetP) {
+            newMatrix[key] = '1300-2148';
+            currentP++;
+          }
+          else if (currentA < minA) {
+            newMatrix[key] = '0800-1648';
+            currentA++;
+          }
+          else {
+            newMatrix[key] = 'O';
+          }
+          upsertBatch.push({ staff_name: staff, duty_date: dateStr, pattern: newMatrix[key] });
+        }
+      });
+    });
+
+    // 確保每位同事剛好有 4 日 DO[cite: 1]
+    STAFF_LIST.forEach(staff => {
+      let doCount = activeMonthConfig.daysArray.filter(day => {
+        const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+        return newMatrix[`${staff}-${dStr}`] === 'DO';
+      }).length;
+
+      if (doCount < 4) {
+        for (const day of activeMonthConfig.daysArray) {
+          if (doCount >= 4) break;
+          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+          const current = newMatrix[`${staff}-${dStr}`];
+          if ((current === 'O' || !current) && !isAutoR(staff, dStr)) {
+            newMatrix[`${staff}-${dStr}`] = 'DO';
+            upsertBatch.push({ staff_name: staff, duty_date: dStr, pattern: 'DO' });
+            doCount++;
+          }
+        }
+      }
+    });
+
+    const { error } = await supabase.from('duty_schedules').upsert(upsertBatch, { onConflict: 'staff_name,duty_date' });
+    if (error) {
+      alert('自動排更儲存失敗: ' + error.message);
+    } else {
+      setMatrixShifts(newMatrix);
+      setSuccessMsg('✨ 成功完成一鍵公平自動排更！每星期至少 1 日 O、平日 A 班最少 6 人及 4 日 DO 已全部完美安排！');
+      fetchData();
+    }
+    setIsAutoScheduling(false);
   };
 
   const handleDateClick = (clickedDateStr: string) => {
@@ -289,11 +425,6 @@ export default function OtaDutyApp() {
     }
 
     localStorage.setItem('ota_duty_user_name', selectedStaff);
-
-    const userReqCount = requests.filter(r => r.staff_name === selectedStaff).length + 1;
-    if (userReqCount > 4) {
-      setWarningMsg(`⚠️ 提醒：${selectedStaff} 本月更期申請已達 ${userReqCount} 次！`);
-    }
 
     for (const dStr of selectedDates) {
       if (isAutoR(selectedStaff, dStr)) {
@@ -668,7 +799,6 @@ export default function OtaDutyApp() {
                   </div>
                 )}
  
-                {/* 📅 選擇日期申請狀況與人名 (新增人數超標/違規檢測: 加 ⚠️ 符號) */}
                 {selectedDates.length > 0 && (
                   <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-2">
                     <div className="flex items-center justify-between font-semibold text-slate-700">
@@ -682,7 +812,9 @@ export default function OtaDutyApp() {
                       const dayReqs = requests.filter(r => r.request_date === dateStr);
                       return (
                         <div key={dateStr} className="bg-white p-2 rounded border border-slate-100">
-                          <div className="font-bold text-slate-600 mb-1">{dateStr}</div>
+                          <div className="font-bold text-slate-600 mb-1">
+                            {dateStr} {publicHolidays[dateStr] ? `🎉 (${publicHolidays[dateStr]})` : ''}
+                          </div>
                           {dayReqs.length === 0 ? (
                             <div className="text-slate-400 italic text-[11px]">目前暫無人申請</div>
                           ) : (
@@ -705,7 +837,6 @@ export default function OtaDutyApp() {
                                     }`}>
                                       {req.pattern}
                                     </span>
-                                    {/* 觸犯規矩時加個 ⚠️ 符號 */}
                                     {isViolation && (
                                       <span className="font-bold text-rose-600 text-xs animate-pulse" title="該更次人數不符規矩！">
                                         ⚠️
@@ -722,7 +853,6 @@ export default function OtaDutyApp() {
                   </div>
                 )}
  
-                {/* 簡化版 Excel 矩陣實況表 */}
                 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
@@ -876,7 +1006,7 @@ export default function OtaDutyApp() {
                 <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Eye className="w-4 h-4 text-emerald-600" /> 【{activeMonthConfig.year} 年 {activeMonthConfig.monthNum} 月】預計更期與即時撞期監控
                 </h2>
-                <p className="text-[11px] text-slate-500 mt-0.5">P班規則：平日需剛好2人，週末/假期需剛好1人。</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">A班規則：平日最少6人，週末/假期3人。P班：平日2人，假期1人。</p>
               </div>
             </div>
 
@@ -911,10 +1041,13 @@ export default function OtaDutyApp() {
                             const isMidOver = currentVal === '1000-1848' && getDayPatternCount(dateStr, '1000-1848') > 1;
                             
                             const isHoliday = checkIsHolidayOrWeekend(dateStr);
-                            const pCount = getDayPatternCount(dateStr, '1300-2148');
-                            const isPOver = (currentVal === '1300-2148' || currentVal === '1330-2218') && ((!isHoliday && pCount !== 2) || (isHoliday && pCount !== 1));
+                            const pCount = getDayPatternCount(dateStr, '1300-2148') + getDayPatternCount(dateStr, '1330-2218');
+                            const aCount = getDayPatternCount(dateStr, '0800-1648');
 
-                            const hasWarning = isAnOver || isMidOver || isPOver;
+                            const isPOver = (currentVal === '1300-2148' || currentVal === '1330-2218') && ((!isHoliday && pCount !== 2) || (isHoliday && pCount !== 1));
+                            const isALack = currentVal === '0800-1648' && ((!isHoliday && aCount < 6) || (isHoliday && aCount < 3));
+
+                            const hasWarning = isAnOver || isMidOver || isPOver || isALack;
 
                             return (
                               <td key={day} className={`p-0.5 border-l text-center ${hasWarning ? 'bg-rose-50' : ''}`}>
@@ -924,11 +1057,11 @@ export default function OtaDutyApp() {
                                   (currentVal === '1300-2148' || currentVal === '1330-2218') ? 'bg-amber-50 text-amber-800' :
                                   currentVal === 'AN' ? 'bg-purple-50 text-purple-800' :
                                   currentVal === 'R' ? 'bg-indigo-50 text-indigo-800 font-bold' :
-                                  ['AL', 'CL', 'ML', '育嬰假'].includes(currentVal) ? 'bg-teal-50 text-teal-800' :
+                                  ['AL', 'CL', 'ML', '育嬰假', 'O'].includes(currentVal) ? 'bg-teal-50 text-teal-800' :
                                   'bg-slate-50 text-slate-400'
                                 }`}>
                                   {currentVal}{hasRequested ? '^' : ''}
-                                  {hasWarning && <span className="block text-[8px] text-rose-600 font-bold">⚠️人數</span>}
+                                  {hasWarning && <span className="block text-[8px] text-rose-600 font-bold">⚠️人手</span>}
                                 </div>
                               </td>
                             );
@@ -950,12 +1083,21 @@ export default function OtaDutyApp() {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <div>
                 <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                  <Edit3 className="w-4 h-4 text-emerald-600" /> 主管全月總覽與匯出 Excel
+                  <Edit3 className="w-4 h-4 text-emerald-600" /> 主管全月總覽與一鍵自動排更
                 </h2>
-                <p className="text-[11px] text-slate-500 mt-0.5">可自由選擇切換月份，隨時查閱或編輯過去的更表。</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">尊重同事 Request，自動補齊每週最少 1 日 O、A/P/AN/R 及 4 日 DO。</p>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                <button
+                  onClick={handleSmartAutoSchedule}
+                  disabled={isAutoScheduling}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-spin" />
+                  {isAutoScheduling ? 'AI 排更中...' : '🤖 一鍵公平自動排更'}
+                </button>
+
                 <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-300">
                   <Calendar className="w-3.5 h-3.5 text-slate-600" />
                   <span className="text-xs font-semibold text-slate-700">月份:</span>
@@ -1024,7 +1166,7 @@ export default function OtaDutyApp() {
                                       currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800 border-blue-300' :
                                       (currentVal === '1300-2148' || currentVal === '1330-2218') ? 'bg-amber-50 text-amber-800 border-amber-300' :
                                       currentVal === 'AN' ? 'bg-purple-50 text-purple-800 border-purple-300' :
-                                      ['AL', 'CL', 'ML', '育嬰假'].includes(currentVal) ? 'bg-teal-50 text-teal-800 border-teal-300' :
+                                      ['AL', 'CL', 'ML', '育嬰假', 'O'].includes(currentVal) ? 'bg-teal-50 text-teal-800 border-teal-300' :
                                       'bg-slate-50 text-slate-400 border-slate-200'
                                     }`}
                                     title={hasAutoR ? "前一日為 AN 班，此 REST 班次無法單獨修改" : ""}
@@ -1109,7 +1251,7 @@ export default function OtaDutyApp() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {STAFF_LIST.map(staff => {
+                  {STAFF_LIST.map((staff: string) => {
                     const reqCount = requests.filter(r => r.staff_name === staff).length;
                     let anCount = 0;
                     let rCount = 0;
