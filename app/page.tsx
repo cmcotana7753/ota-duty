@@ -34,13 +34,6 @@ const STAFF_LIST = [
   'Wong Hei Laam, Hazel'
 ];
 
-// 1. 完全不用出更/不派 Duty 的同事（DSC 及其他表外同事）
-const EXCLUDED_STAFF = [
-  'Ng Wai Hung Samuel', 
-  'Lam Ngan Sze Jessie',
-  // 如果你仲有另外每星期兩位 DSC 同事嘅全名，可以直接加喺度
-];
-
 // 2. 只可排 A 更且不計入核心人手的同事
 const ONLY_A_NO_COUNT_STAFF = [
   'Lo Hiu Yu',
@@ -76,6 +69,13 @@ export default function OtaDutyApp() {
   const [adminPassword, setAdminPassword] = useState('');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isAutoScheduling, setIsAutoScheduling] = useState(false);
+
+  // 浮動豁免彈窗狀態
+  const [showAutoModal, setShowAutoModal] = useState(false);
+  const [tempExcludedStaff, setTempExcludedStaff] = useState<string[]>([
+    'Ng Wai Hung Samuel', 
+    'Lam Ngan Sze Jessie'
+  ]);
 
   const [defaultConfig, setDefaultConfig] = useState({
     targetYear: 2026,
@@ -217,21 +217,18 @@ export default function OtaDutyApp() {
     return false;
   };
 
-  // 🤖 智能一鍵公平自動排更演算法 (完美閃避及處理特別安排)
-  const handleSmartAutoSchedule = async () => {
-    if (!confirm(`🤖 確定要對 【${activeMonthConfig.year} 年 ${activeMonthConfig.monthNum} 月】 進行一鍵公平自動排更嗎？\n系統已自動略過 DSC 及表外同事，並嚴格遵守特許 A 更與每週 O 假規則！`)) {
-      return;
-    }
-
+  // 🤖 智能一鍵公平自動排更演算法 (根據彈窗選出的浮動不需出更名單)
+  const executeSmartAutoSchedule = async () => {
+    setShowAutoModal(false);
     setIsAutoScheduling(true);
+
     let newMatrix = { ...matrixShifts };
     let upsertBatch: { staff_name: string; duty_date: string; pattern: string }[] = [];
 
-    // 略過完全不需出更的同事
-    const activeValidStaff = STAFF_LIST.filter(s => !EXCLUDED_STAFF.includes(s));
+    const activeValidStaff = STAFF_LIST.filter(s => !tempExcludedStaff.includes(s));
 
     requests.forEach(r => {
-      if (EXCLUDED_STAFF.includes(r.staff_name)) return;
+      if (tempExcludedStaff.includes(r.staff_name)) return;
       newMatrix[`${r.staff_name}-${r.request_date}`] = r.pattern;
       upsertBatch.push({ staff_name: r.staff_name, duty_date: r.request_date, pattern: r.pattern });
       if (r.pattern === 'AN') {
@@ -282,7 +279,6 @@ export default function OtaDutyApp() {
       const minA = isHoliday ? 3 : 6;
       const targetP = isHoliday ? 1 : 2;
 
-      // 只計算不包含「不計入人手」同事的 A 班人數
       let currentA = activeValidStaff.filter(s => 
         !ONLY_A_NO_COUNT_STAFF.includes(s) && newMatrix[`${s}-${dateStr}`] === '0800-1648'
       ).length;
@@ -300,17 +296,14 @@ export default function OtaDutyApp() {
             return;
           }
 
-          // 規則 2 & 3：Lo Hiu Yu, Wong Hei Laam, Hazel 或優先 A 更同事，直接派 A 更
           if (ONLY_A_NO_COUNT_STAFF.includes(staff) || PREFER_A_STAFF.includes(staff)) {
             newMatrix[key] = '0800-1648';
             if (!ONLY_A_NO_COUNT_STAFF.includes(staff)) currentA++;
           }
-          // 10點班 (限 1 人，排除特許同事)
           else if (current10 < 1 && (sIdx + day) % 23 === 3) {
             newMatrix[key] = '1000-1848';
             current10++;
           }
-          // AN 班 (限 1 人)
           else if (currentAN < 1 && (sIdx + day) % 23 === 7) {
             newMatrix[key] = 'AN';
             currentAN++;
@@ -320,12 +313,10 @@ export default function OtaDutyApp() {
               upsertBatch.push({ staff_name: staff, duty_date: nextD, pattern: 'R' });
             }
           }
-          // P 班
           else if (currentP < targetP) {
             newMatrix[key] = '1300-2148';
             currentP++;
           }
-          // A 班（補足最少人數）
           else if (currentA < minA) {
             newMatrix[key] = '0800-1648';
             currentA++;
@@ -364,7 +355,7 @@ export default function OtaDutyApp() {
       alert('自動排更儲存失敗: ' + error.message);
     } else {
       setMatrixShifts(newMatrix);
-      setSuccessMsg('✨ 成功完成一鍵公平自動排更！所有特別安排（DSC豁免、限A不計人手、優先A更）已完美過濾！');
+      setSuccessMsg('✨ 成功完成一鍵公平自動排更！已根據浮動名單豁免指定同事，並完美鋪排更次！');
       fetchData();
     }
     setIsAutoScheduling(false);
@@ -552,7 +543,6 @@ export default function OtaDutyApp() {
   const getDayPatternCount = (dateStr: string, patternId: string) => {
     let count = 0;
     STAFF_LIST.forEach(staff => {
-      if (EXCLUDED_STAFF.includes(staff)) return; // 略過 DSC
       let curP = matrixShifts[`${staff}-${dateStr}`] || 'O';
       if (isAutoR(staff, dateStr)) curP = 'R';
       if (curP === patternId) count++;
@@ -560,12 +550,10 @@ export default function OtaDutyApp() {
     return count;
   };
 
-  // 取得有效計算 A 班人手的人數 (不計入 ONLY_A_NO_COUNT_STAFF)
   const getEffectiveACount = (dateStr: string) => {
     let count = 0;
     STAFF_LIST.forEach(staff => {
-      if (EXCLUDED_STAFF.includes(staff)) return;
-      if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return; // 不計入人手
+      if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return; 
       let curP = matrixShifts[`${staff}-${dateStr}`] || 'O';
       if (curP === '0800-1648') count++;
     });
@@ -695,6 +683,54 @@ export default function OtaDutyApp() {
                 <button type="submit" className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium">登入</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 🤖 浮動豁免名單挑選彈窗 */}
+      {showAutoModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-600" /> 選擇本週/本月不需出 Duty 嘅浮動同事 (DSC豁免)
+              </h3>
+              <button onClick={() => setShowAutoModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+            
+            <p className="text-xs text-slate-500">
+              請勾選今次自動排高中不需要系統分配更次嘅同事（例如 DSC 同事或外調人員）：
+            </p>
+
+            <div className="max-h-60 overflow-y-auto space-y-1.5 border border-slate-200 p-3 rounded-lg bg-slate-50">
+              {STAFF_LIST.map(staff => {
+                const isChecked = tempExcludedStaff.includes(staff);
+                return (
+                  <label key={staff} className="flex items-center justify-between p-2 rounded bg-white border border-slate-100 hover:bg-slate-100 cursor-pointer text-xs font-semibold">
+                    <span>{staff}</span>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setTempExcludedStaff([...tempExcludedStaff, staff]);
+                        } else {
+                          setTempExcludedStaff(tempExcludedStaff.filter(s => s !== staff));
+                        }
+                      }}
+                      className="w-4 h-4 text-purple-600 rounded border-slate-300 focus:ring-purple-500"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button type="button" onClick={() => setShowAutoModal(false)} className="px-4 py-2 rounded-lg text-xs text-slate-600 hover:bg-slate-100">取消</button>
+              <button type="button" onClick={executeSmartAutoSchedule} className="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg text-xs font-bold shadow-sm">
+                確認並開始一鍵自動排更 🚀
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1132,12 +1168,12 @@ export default function OtaDutyApp() {
                 <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Edit3 className="w-4 h-4 text-emerald-600" /> 主管全月總覽與一鍵自動排更
                 </h2>
-                <p className="text-[11px] text-slate-500 mt-0.5">已自動略過 DSC 及表外同事，智能鎖定特許 A 更與每週 O 假。</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">點擊自動排更可彈出選單自由勾選浮動免出 Duty 同事。</p>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
                 <button
-                  onClick={handleSmartAutoSchedule}
+                  onClick={() => setShowAutoModal(true)}
                   disabled={isAutoScheduling}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all shrink-0 active:scale-95 disabled:opacity-50"
                 >
@@ -1259,7 +1295,7 @@ export default function OtaDutyApp() {
           </div>
         )}
 
-        {/* 版面 4：公平分派統計 */}
+        {/* 版面 4：公平分統計 */}
         {activeTab === 'board3' && isAdmin && (
           <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 p-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
