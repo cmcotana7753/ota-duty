@@ -543,47 +543,67 @@ export default function OtaDutyApp() {
 ))}
 </div>
                 </div>
-{/* 同一版面直接顯示全科未來一個月的 Request 實況表 */}
+{/* 簡化版 Excel 矩陣實況表 (Matrix View) */}
 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
   <div className="flex items-center justify-between mb-3">
     <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-      📊 {defaultConfig.targetMonthNum}月份 OTA Request 實況總覽
+      📊 {defaultConfig.targetMonthNum}月份 OTA Request 簡化版 Excel 實況表
     </h3>
     <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-      共 {requests.length} 項紀錄
+      即時同步中 (每5秒更新)
     </span>
   </div>
 
-  {requests.length === 0 ? (
-    <div className="text-center py-6 text-xs text-slate-400">
-      目前本月尚無任何同事提交 Request
-    </div>
-  ) : (
-    <div className="overflow-x-auto max-h-60 overflow-y-auto">
-      <table className="w-full text-left text-xs border-collapse">
-        <thead>
-          <tr className="border-b border-slate-200 text-slate-500 bg-slate-50 sticky top-0">
-            <th className="p-2 font-medium">同事姓名</th>
-            <th className="p-2 font-medium">日期</th>
-            <th className="p-2 font-medium">Pattern</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {requests.map((req, idx) => (
-            <tr key={idx} className="hover:bg-slate-50">
-              <td className="p-2 font-semibold text-slate-800">{req.staff_name}</td>
-              <td className="p-2 text-slate-600">{req.request_date}</td>
-              <td className="p-2">
-                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-bold border border-emerald-200 text-[10px]">
-                  {req.pattern}
-                </span>
-              </td>
-            </tr>
+  <div className="overflow-x-auto max-h-80 overflow-y-auto border border-slate-200 rounded-lg">
+    <table className="w-full text-center text-[11px] border-collapse">
+      <thead>
+        <tr className="bg-slate-100 text-slate-700 sticky top-0 z-10 border-b border-slate-200">
+          <th className="p-2 border-r border-slate-200 font-semibold sticky left-0 bg-slate-100 z-20 min-w-[70px]">
+            日期
+          </th>
+          {STAFF_LIST.map((staffName) => (
+            <th key={staffName} className="p-2 border-r border-slate-200 font-medium whitespace-nowrap min-w-[55px]">
+              {staffName.length > 4 ? staffName.slice(-4) : staffName}
+            </th>
           ))}
-        </tbody>
-      </table>
-    </div>
-  )}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {activeMonthConfig.daysArray.map((dayNum) => {
+          const formattedDay = String(dayNum).padStart(2, '0');
+          const dateStr = `${activeMonthConfig.monthStr}-${formattedDay}`;
+
+          return (
+            <tr key={dateStr} className="hover:bg-slate-50">
+              {/* 日期欄位 (固定在左側) */}
+              <td className="p-2 border-r border-slate-200 font-bold bg-slate-50 sticky left-0 z-10 text-slate-700">
+                {formattedDay}日
+              </td>
+
+              {/* 各個同事在該日期的 Request 狀態 */}
+              {STAFF_LIST.map((staffName) => {
+                const matchedReq = requests.find(
+                  (r) => r.request_date === dateStr && r.staff_name === staffName
+                );
+
+                return (
+                  <td key={staffName} className="p-1.5 border-r border-slate-100">
+                    {matchedReq ? (
+                      <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px] border border-emerald-300 shadow-xs">
+                        {matchedReq.pattern}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">-</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </div>
 </div>
                 <button 
                   type="submit" 
