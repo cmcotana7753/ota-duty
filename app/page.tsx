@@ -489,7 +489,7 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
         
         {/* 版面 1：同事意願申請與取消 (自動固定為當前目標月份) */}
         {activeTab === 'board1' && (
-          <div className="max-w-2xl mx-auto space-y-4">
+          <div className="max-w-5xl mx-auto space-y-4">
             
             {/* 截更提示 Banner */}
             {defaultConfig.isLocked && !isAdmin && (
