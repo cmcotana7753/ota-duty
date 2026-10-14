@@ -40,7 +40,7 @@ const DUTY_PATTERNS = [
   { id: '1300-2148', label: '1300-2148 (P)', mins: 528, hours: 8.8, desc: '平日2人, 假期/週末1人' },
   { id: 'AN', label: 'AN (ANight)', mins: 966, hours: 16.1, desc: '每日限 1 人 (翌日必跟R)' },
   { id: 'R', label: 'R (REST)', mins: 0, hours: 0, desc: 'AN翌日休息 (不計時數)' },
-   { id: 'AL', label: 'AL (年假)', mins: 528, hours: 8.8, desc: '年假' },
+  { id: 'AL', label: 'AL (年假)', mins: 528, hours: 8.8, desc: '年假' },
   { id: 'CL', label: 'CL (恩恤假)', mins: 528, hours: 8.8, desc: '恩恤假' },
   { id: 'ML', label: 'ML (產假)', mins: 528, hours: 8.8, desc: '產假' },
   { id: '育嬰假', label: '育嬰假', mins: 528, hours: 8.8, desc: '育嬰假' },
@@ -109,34 +109,16 @@ export default function OtaDutyApp() {
   
   const [requests, setRequests] = useState<{
     duty_pattern: string; staff_name: string; request_date: string; pattern: string 
-}[]>([]);
+  }[]>([]);
   const [matrixShifts, setMatrixShifts] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState('');
   const [warningMsg, setWarningMsg] = useState('');
-
-  const selectedDateStats = useMemo(() => {
-    if (!selectedDate || !requests) return null;
-    
-    const dayRequests = requests.filter((r) => r.request_date === selectedDate);
-    if (dayRequests.length === 0) return { total: 0, patterns: {} };
-
-    const patternsCount = dayRequests.reduce((acc, curr) => {
-      const code = curr.pattern || '其他';
-      acc[code] = (acc[code] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    return {
-      total: dayRequests.length,
-      patterns: patternsCount,
-    };
-  }, [selectedDate, requests]);
 
   // 判斷指定日期是否為週末或公眾假期
   const checkIsHolidayOrWeekend = (dateStr: string) => {
     if (!dateStr) return false;
     const dateObj = new Date(dateStr);
-    const dayOfWeek = dateObj.getDay(); // 0 = 週日, 6 = 週六
+    const dayOfWeek = dateObj.getDay();
 
     const publicHolidays: Record<string, string> = {
       '2026-01-01': '元旦',
@@ -160,18 +142,6 @@ export default function OtaDutyApp() {
     return Boolean(publicHolidays[dateStr] || dayOfWeek === 0 || dayOfWeek === 6);
   };
 
-  const holidayInfo = useMemo(() => {
-    if (!selectedDate) return null;
-    const dateObj = new Date(selectedDate);
-    const dayOfWeek = dateObj.getDay();
-    const isWkEnd = dayOfWeek === 0 || dayOfWeek === 6;
-    
-    if (checkIsHolidayOrWeekend(selectedDate)) {
-      return { type: 'HOLIDAY', label: isWkEnd ? '📅 週末 / 公眾假期' : '🎉 公眾假期' };
-    }
-    return null;
-  }, [selectedDate]);
-
   useEffect(() => {
     fetchData();
   }, [viewMonthStr]);
@@ -189,6 +159,46 @@ export default function OtaDutyApp() {
       setSelectedStaff(savedStaff);
     }
   }, []);
+
+  const getPrevDateStr = (dateStr: string) => {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() - 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const getNextDateStr = (dateStr: string) => {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const isAutoR = (staff: string, dateStr: string) => {
+    const prevDateStr = getPrevDateStr(dateStr);
+    const prevReq = requests.find(r => r.staff_name === staff && r.request_date === prevDateStr);
+    const prevMatrix = matrixShifts[`${staff}-${prevDateStr}`];
+    return (prevReq?.pattern === 'AN' || prevMatrix === 'AN');
+  };
+
+  // 核心：檢查某日某個 Pattern 是否違規
+  const checkReqViolation = (dateStr: string, pattern: string) => {
+    const reqsOnDay = requests.filter(r => r.request_date === dateStr);
+    const count = reqsOnDay.filter(r => r.pattern === pattern).length;
+    const isHoliday = checkIsHolidayOrWeekend(dateStr);
+
+    if (pattern === 'AN' && count > 1) return true;
+    if (pattern === '1000-1848' && count > 1) return true;
+    if (pattern === '1300-2148' || pattern === '1330-2218') {
+      if (!isHoliday && count > 2) return true;
+      if (isHoliday && count > 1) return true;
+    }
+    return false;
+  };
 
   const handleDateClick = (clickedDateStr: string) => {
     let maxDays = 1;
@@ -285,6 +295,13 @@ export default function OtaDutyApp() {
       setWarningMsg(`⚠️ 提醒：${selectedStaff} 本月更期申請已達 ${userReqCount} 次！`);
     }
 
+    for (const dStr of selectedDates) {
+      if (isAutoR(selectedStaff, dStr)) {
+        setWarningMsg(`⚠️ ${dStr} 為 AN 班翌日休息 (R)，無法進行修改或提交！`);
+        return;
+      }
+    }
+
     const payload = selectedDates.map((d) => ({
       staff_name: selectedStaff,
       request_date: d,
@@ -301,21 +318,13 @@ export default function OtaDutyApp() {
       return;
     }
 
-    // 主邏輯：若選擇 AN，自動幫琴日或翌日（這裡寫入當日）設定，並自動順帶將「翌日」補上 R 班
     for (const dStr of selectedDates) {
       await supabase.from('duty_schedules').upsert([
         { staff_name: selectedStaff, duty_date: dStr, pattern: selectedPattern }
       ], { onConflict: 'staff_name,duty_date' });
 
       if (selectedPattern === 'AN') {
-        const nextDateObj = new Date(dStr);
-        nextDateObj.setDate(nextDateObj.getDate() + 1);
-        const ny = nextDateObj.getFullYear();
-        const nm = String(nextDateObj.getMonth() + 1).padStart(2, '0');
-        const nd = String(nextDateObj.getDate()).padStart(2, '0');
-        const nextDateStr = `${ny}-${nm}-${nd}`;
-
-        // 確保不超過當月最後一日
+        const nextDateStr = getNextDateStr(dStr);
         if (nextDateStr <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
           await supabase.from('duty_schedules').upsert([
             { staff_name: selectedStaff, duty_date: nextDateStr, pattern: 'R' }
@@ -330,21 +339,20 @@ export default function OtaDutyApp() {
 
   const handleMatrixChange = async (staff: string, day: number, newPattern: string) => {
     const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
+    
+    if (isAutoR(staff, dateStr)) {
+      alert(`⚠️ 此更次為 AN 翌日之 Rest (R)，不能單獨修改！請先取消前一日的 AN 班。`);
+      return;
+    }
+
     setMatrixShifts(prev => ({ ...prev, [`${staff}-${dateStr}`]: newPattern }));
 
     await supabase.from('duty_schedules').upsert([
       { staff_name: staff, duty_date: dateStr, pattern: newPattern }
     ], { onConflict: 'staff_name,duty_date' });
 
-    // 主管喺矩陣手動改 AN 時，自動順便將翌日改為 R
     if (newPattern === 'AN') {
-      const nextDateObj = new Date(dateStr);
-      nextDateObj.setDate(nextDateObj.getDate() + 1);
-      const ny = nextDateObj.getFullYear();
-      const nm = String(nextDateObj.getMonth() + 1).padStart(2, '0');
-      const nd = String(nextDateObj.getDate()).padStart(2, '0');
-      const nextDateStr = `${ny}-${nm}-${nd}`;
-
+      const nextDateStr = getNextDateStr(dateStr);
       if (nextDateStr <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
         setMatrixShifts(prev => ({ ...prev, [`${staff}-${nextDateStr}`]: 'R' }));
         await supabase.from('duty_schedules').upsert([
@@ -358,7 +366,8 @@ export default function OtaDutyApp() {
     let totalMins = 0;
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
-      const patternId = matrixShifts[`${staff}-${dateStr}`] || 'O';
+      let patternId = matrixShifts[`${staff}-${dateStr}`] || 'O';
+      if (isAutoR(staff, dateStr)) patternId = 'R';
       const patternObj = DUTY_PATTERNS.find(p => p.id === patternId);
       if (patternObj) totalMins += patternObj.mins;
     });
@@ -378,7 +387,9 @@ export default function OtaDutyApp() {
   const getDayPatternCount = (dateStr: string, patternId: string) => {
     let count = 0;
     STAFF_LIST.forEach(staff => {
-      if (matrixShifts[`${staff}-${dateStr}`] === patternId) count++;
+      let curP = matrixShifts[`${staff}-${dateStr}`] || 'O';
+      if (isAutoR(staff, dateStr)) curP = 'R';
+      if (curP === patternId) count++;
     });
     return count;
   };
@@ -396,7 +407,8 @@ export default function OtaDutyApp() {
       let row = [`"${staff}"`];
       activeMonthConfig.daysArray.forEach(day => {
         const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
-        const pattern = matrixShifts[`${staff}-${dateStr}`] || 'O';
+        let pattern = matrixShifts[`${staff}-${dateStr}`] || 'O';
+        if (isAutoR(staff, dateStr)) pattern = 'R';
         const hasCarat = isRequestedByStaff(staff, dateStr, pattern);
         const cellVal = hasCarat ? `${pattern}^` : pattern;
         row.push(`"${cellVal}"`);
@@ -552,7 +564,7 @@ export default function OtaDutyApp() {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 text-mb-1.5 text-xs">選擇 Duty Pattern (選 AN 翌日會自動跟 R)</label>
+                  <label className="block font-semibold text-slate-700 text-mb-1.5 text-xs">選擇 Duty Pattern (選 AN 翌日會自動顯示 R)</label>
                   <div className="flex flex-wrap gap-1.5">
                     {DUTY_PATTERNS.filter(p => p.id !== 'R').map(p => (
                       <button
@@ -656,6 +668,7 @@ export default function OtaDutyApp() {
                   </div>
                 )}
  
+                {/* 📅 選擇日期申請狀況與人名 (新增人數超標/違規檢測: 加 ⚠️ 符號) */}
                 {selectedDates.length > 0 && (
                   <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-2">
                     <div className="flex items-center justify-between font-semibold text-slate-700">
@@ -673,16 +686,34 @@ export default function OtaDutyApp() {
                           {dayReqs.length === 0 ? (
                             <div className="text-slate-400 italic text-[11px]">目前暫無人申請</div>
                           ) : (
-                            <div className="flex flex-wrap gap-1">
-                              {dayReqs.map((req, idx) => (
-                                <span 
-                                  key={idx} 
-                                  className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded text-[11px]"
-                                >
-                                  <span className="font-bold text-emerald-900">{req.staff_name}</span>
-                                  <span className="bg-emerald-600 text-white px-1 rounded text-[10px]">{req.pattern}</span>
-                                </span>
-                              ))}
+                            <div className="flex flex-wrap gap-1.5">
+                              {dayReqs.map((req, idx) => {
+                                const isViolation = checkReqViolation(dateStr, req.pattern);
+
+                                return (
+                                  <span 
+                                    key={idx} 
+                                    className={`inline-flex items-center gap-1 border px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                                      isViolation
+                                        ? 'bg-rose-50 text-rose-900 border-rose-300 shadow-xs'
+                                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    }`}
+                                  >
+                                    <span className="font-bold">{req.staff_name}</span>
+                                    <span className={`px-1 rounded text-[10px] font-bold ${
+                                      isViolation ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'
+                                    }`}>
+                                      {req.pattern}
+                                    </span>
+                                    {/* 觸犯規矩時加個 ⚠️ 符號 */}
+                                    {isViolation && (
+                                      <span className="font-bold text-rose-600 text-xs animate-pulse" title="該更次人數不符規矩！">
+                                        ⚠️
+                                      </span>
+                                    )}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -691,6 +722,7 @@ export default function OtaDutyApp() {
                   </div>
                 )}
  
+                {/* 簡化版 Excel 矩陣實況表 */}
                 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
@@ -741,11 +773,17 @@ export default function OtaDutyApp() {
                                 (r) => r.request_date === dateStr && r.staff_name === staffName
                               );
 
+                              const hasAutoR = isAutoR(staffName, dateStr);
+
                               return (
                                 <td key={dateStr} className="p-1.5 border-r border-slate-100">
                                   {matchedReq ? (
                                     <span className="inline-block px-1 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[9px] border border-emerald-300 shadow-xs">
                                       {matchedReq.pattern}
+                                    </span>
+                                  ) : hasAutoR ? (
+                                    <span className="inline-block px-1 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold text-[9px] border border-indigo-300 shadow-xs">
+                                      R
                                     </span>
                                   ) : (
                                     <span className="text-slate-300">-</span>
@@ -806,6 +844,13 @@ export default function OtaDutyApp() {
                             if (confirm(`確定要取消 ${req.request_date} 的 [${req.pattern}] 申請嗎？`)) {
                               await supabase.from('staff_requests').delete().eq('staff_name', req.staff_name).eq('request_date', req.request_date);
                               await supabase.from('duty_schedules').upsert([{ staff_name: req.staff_name, duty_date: req.request_date, pattern: 'O' }], { onConflict: 'staff_name,duty_date' });
+                              
+                              if (req.pattern === 'AN') {
+                                const nextDateStr = getNextDateStr(req.request_date);
+                                await supabase.from('staff_requests').delete().eq('staff_name', req.staff_name).eq('request_date', nextDateStr);
+                                await supabase.from('duty_schedules').upsert([{ staff_name: req.staff_name, duty_date: nextDateStr, pattern: 'O' }], { onConflict: 'staff_name,duty_date' });
+                              }
+
                               setSuccessMsg(`🗑️ 已成功取消 ${req.request_date} 的更次申請！`);
                               fetchData();
                             }
@@ -857,16 +902,17 @@ export default function OtaDutyApp() {
                           <td className="p-2 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm truncate max-w-[130px]">{staff}</td>
                           {activeMonthConfig.daysArray.map(day => {
                             const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
-                            const currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
+                            let currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
+                            if (isAutoR(staff, dateStr)) currentVal = 'R';
+
                             const hasRequested = isRequestedByStaff(staff, dateStr, currentVal);
 
                             const isAnOver = currentVal === 'AN' && getDayPatternCount(dateStr, 'AN') > 1;
                             const isMidOver = currentVal === '1000-1848' && getDayPatternCount(dateStr, '1000-1848') > 1;
                             
-                            // P班人數檢驗邏輯
                             const isHoliday = checkIsHolidayOrWeekend(dateStr);
                             const pCount = getDayPatternCount(dateStr, '1300-2148');
-                            const isPOver = currentVal === '1300-2148' && ((!isHoliday && pCount !== 2) || (isHoliday && pCount !== 1));
+                            const isPOver = (currentVal === '1300-2148' || currentVal === '1330-2218') && ((!isHoliday && pCount !== 2) || (isHoliday && pCount !== 1));
 
                             const hasWarning = isAnOver || isMidOver || isPOver;
 
@@ -875,9 +921,9 @@ export default function OtaDutyApp() {
                                 <div className={`p-1 text-[10px] font-semibold rounded truncate ${
                                   currentVal === '0800-1648' ? 'bg-emerald-50 text-emerald-800' :
                                   currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800' :
-                                  currentVal === '1300-2148' ? 'bg-amber-50 text-amber-800' :
+                                  (currentVal === '1300-2148' || currentVal === '1330-2218') ? 'bg-amber-50 text-amber-800' :
                                   currentVal === 'AN' ? 'bg-purple-50 text-purple-800' :
-                                  currentVal === 'R' ? 'bg-indigo-50 text-indigo-800' :
+                                  currentVal === 'R' ? 'bg-indigo-50 text-indigo-800 font-bold' :
                                   ['AL', 'CL', 'ML', '育嬰假'].includes(currentVal) ? 'bg-teal-50 text-teal-800' :
                                   'bg-slate-50 text-slate-400'
                                 }`}>
@@ -959,7 +1005,10 @@ export default function OtaDutyApp() {
                           <td className="p-2 font-semibold text-slate-900 sticky left-0 bg-white z-10 border-r shadow-sm truncate max-w-[130px]">{staff}</td>
                           {activeMonthConfig.daysArray.map(day => {
                             const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
-                            const currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
+                            let currentVal = matrixShifts[`${staff}-${dateStr}`] || 'O';
+                            const hasAutoR = isAutoR(staff, dateStr);
+                            if (hasAutoR) currentVal = 'R';
+
                             const hasRequested = isRequestedByStaff(staff, dateStr, currentVal);
 
                             return (
@@ -967,16 +1016,18 @@ export default function OtaDutyApp() {
                                 <div className="flex items-center gap-0.5">
                                   <select
                                     value={currentVal}
+                                    disabled={hasAutoR}
                                     onChange={(e) => handleMatrixChange(staff, day, e.target.value)}
                                     className={`w-full p-1 text-[10px] font-semibold rounded border ${
+                                      hasAutoR ? 'bg-indigo-100 text-indigo-900 border-indigo-300 opacity-90 cursor-not-allowed font-bold' :
                                       currentVal === '0800-1648' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
                                       currentVal === '1000-1848' ? 'bg-blue-50 text-blue-800 border-blue-300' :
-                                      currentVal === '1300-2148' ? 'bg-amber-50 text-amber-800 border-amber-300' :
+                                      (currentVal === '1300-2148' || currentVal === '1330-2218') ? 'bg-amber-50 text-amber-800 border-amber-300' :
                                       currentVal === 'AN' ? 'bg-purple-50 text-purple-800 border-purple-300' :
-                                      currentVal === 'R' ? 'bg-indigo-50 text-indigo-800 border-indigo-300' :
                                       ['AL', 'CL', 'ML', '育嬰假'].includes(currentVal) ? 'bg-teal-50 text-teal-800 border-teal-300' :
                                       'bg-slate-50 text-slate-400 border-slate-200'
                                     }`}
+                                    title={hasAutoR ? "前一日為 AN 班，此 REST 班次無法單獨修改" : ""}
                                   >
                                     {DUTY_PATTERNS.map(p => (
                                       <option key={p.id} value={p.id}>{p.id}</option>
@@ -1066,10 +1117,12 @@ export default function OtaDutyApp() {
 
                     activeMonthConfig.daysArray.forEach(day => {
                       const dateStr = `${activeMonthConfig.monthStr}-${day < 10 ? '0' + day : day}`;
-                      const pattern = matrixShifts[`${staff}-${dateStr}`];
+                      let pattern = matrixShifts[`${staff}-${dateStr}`];
+                      if (isAutoR(staff, dateStr)) pattern = 'R';
+
                       if (pattern === 'AN') anCount++;
                       if (pattern === 'R') rCount++;
-                      if (pattern === '1300-2148') pCount++;
+                      if (pattern === '1300-2148' || pattern === '1330-2218') pCount++;
                     });
 
                     const totalMins = calculateTotalMinutes(staff);
