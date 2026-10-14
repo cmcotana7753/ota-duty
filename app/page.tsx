@@ -529,7 +529,26 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
                     {STAFF_LIST.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-
+{/* 選擇 Duty Pattern (改為一行過排版) */}
+<div>
+  <label className="block font-semibold text-slate-700 text-mb-1.5 text-xs">選擇 Duty Pattern</label>
+  <div className="flex flex-wrap gap-1.5">
+    {DUTY_PATTERNS.map(p => (
+      <button
+        key={p.id}
+        type="button"
+        onClick={() => { if (!defaultConfig.isLocked || isAdmin) setSelectedPattern(p.id); }}
+        className={`py-2 px-2.5 rounded-md border text-center transition-all flex-1 min-w-[70px] ${
+          selectedPattern === p.id
+            ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold shadow-xs'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+        } ${defaultConfig.isLocked && !isAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
+      >
+        <span className="text-xs font-bold block truncate">{p.id}</span>
+      </button>
+    ))}
+  </div>
+</div>
  {/* 📅 日期選擇區（預設收埋，點擊後彈出視窗） */}
 <div className="mb-4">
   <div className="flex items-center justify-between mb-1">
@@ -647,26 +666,7 @@ const [selectedDates, setSelectedDates] = useState<string[]>([]);
       )}
     </div>
   )}
- {/* 選擇 Duty Pattern (極致縮小：打橫一行 6 格，無淺灰字) */}
-<div>
-  <label className="block font-semibold text-slate-700 mb-1.5 text-xs">選擇 Duty Pattern</label>
-  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-    {DUTY_PATTERNS.map(p => (
-      <button
-        key={p.id}
-        type="button"
-        onClick={() => { if (!defaultConfig.isLocked || isAdmin) setSelectedPattern(p.id); }}
-        className={`py-2 px-1 rounded-md border text-center transition-all ${
-          selectedPattern === p.id 
-            ? 'border-emerald-600 bg-emerald-50 text-emerald-800 font-bold shadow-xs' 
-            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-        } ${defaultConfig.isLocked && !isAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
-      >
-        <span className="text-xs font-bold block truncate">{p.id}</span>
-      </button>
-    ))}
-  </div>
-</div>
+ 
 {/* 簡化版 Excel 矩陣實況表 (Staff x Date) */}
 <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
 <div className="flex items-center justify-between mb-3">
