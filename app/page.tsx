@@ -122,7 +122,7 @@ export default function OtaDutyApp() {
     if (dayRequests.length === 0) return { total: 0, patterns: {} };
 
     const patternsCount = dayRequests.reduce((acc, curr) => {
-      const code = curr.duty_pattern || '其他';
+      const code = curr.pattern || '其他';
       acc[code] = (acc[code] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
