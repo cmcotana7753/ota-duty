@@ -177,7 +177,13 @@ export default function OtaDutyApp() {
   useEffect(() => {
     fetchData();
   }, [viewMonthStr]);
-
+// 每 5 秒自動抓取最新資料，確保即時同步
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchData();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [viewMonthStr]);
   // 載入 localStorage 名稱
   useEffect(() => {
     const savedStaff = localStorage.getItem('ota_duty_user_name');
@@ -522,20 +528,20 @@ export default function OtaDutyApp() {
   )}
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">選擇 Duty Pattern</label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {DUTY_PATTERNS.map(p => (
-                      <div 
-                        key={p.id} 
-                        onClick={() => { if (!defaultConfig.isLocked || isAdmin) setSelectedPattern(p.id); }} 
-                        className={`p-2.5 rounded-lg border cursor-pointer ${
-                          selectedPattern === p.id ? 'border-emerald-600 bg-emerald-50' : 'border-slate-200'
-                        } ${defaultConfig.isLocked && !isAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
-                      >
-                        <div className="font-semibold text-xs">{p.id}</div>
-                        <div className="text-[10px] text-slate-500">{p.desc}</div>
-                      </div>
-                    ))}
-                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+{DUTY_PATTERNS.map(p => (
+  <div
+    key={p.id}
+    onClick={() => { if (!defaultConfig.isLocked || isAdmin) setSelectedPattern(p.id) }}
+    className={`p-2 rounded-lg border cursor-pointer transition-all ${
+      selectedPattern === p.id ? 'border-emerald-600 bg-emerald-50 shadow-sm' : 'border-slate-200 bg-white hover:bg-slate-50'
+    } ${defaultConfig.isLocked && !isAdmin ? 'opacity-60 cursor-not-allowed' : ''}`}
+  >
+    <div className="font-bold text-xs text-slate-900">{p.id}</div>
+    <div className="text-[10px] text-slate-500 truncate">{p.desc}</div>
+  </div>
+))}
+</div>
                 </div>
 
                 <button 
