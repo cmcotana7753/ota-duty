@@ -113,7 +113,64 @@ export default function OtaDutyApp() {
   const [matrixShifts, setMatrixShifts] = useState<Record<string, string>>({});
   const [successMsg, setSuccessMsg] = useState('');
   const [warningMsg, setWarningMsg] = useState('');
+   const selectedDateStats = useMemo(() => {
+    if (!selectedDate || !requests) return null;
+    
+    const dayRequests = requests.filter((r) => r.request_date === selectedDate);
+    if (dayRequests.length === 0) return { total: 0, patterns: {} };
 
+    const patternsCount = dayRequests.reduce((acc, curr) => {
+      const code = curr.duty_pattern || '其他';
+      acc[code] = (acc[code] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return {
+      total: dayRequests.length,
+      patterns: patternsCount,
+    };
+  }, [selectedDate, requests]);
+  // 判斷選定日期是否為週末或公眾假期
+  const holidayInfo = useMemo(() => {
+    if (!selectedDate) return null;
+
+    const dateObj = new Date(selectedDate);
+    const dayOfWeek = dateObj.getDay(); // 0 = 週日, 6 = 週六
+
+    // 2026 年常見香港公眾假期
+    const publicHolidays: Record<string, string> = {
+      '2026-01-01': '元旦',
+      '2026-02-17': '農曆年初一',
+      '2026-02-18': '農曆年初二',
+      '2026-02-19': '農曆年初三',
+      '2026-04-03': '耶穌受難節',
+      '2026-04-04': '清明節 / 耶穌受難節翌日',
+      '2026-04-06': '復活節星期一',
+      '2026-05-01': '勞動節',
+      '2026-05-25': '佛誕',
+      '2026-06-19': '端午節',
+      '2026-07-01': '香港特別行政區成立紀念日',
+      '2026-09-26': '中秋節翌日',
+      '2026-10-01': '國慶日',
+      '2026-10-19': '重陽節',
+      '2026-12-25': '聖誕節',
+      '2026-12-26': '聖誕節後第一個周日',
+    };
+
+    const isPublicHoliday = publicHolidays[selectedDate];
+
+    if (isPublicHoliday) {
+      return { type: 'PH', label: `🎉 公眾假期（${isPublicHoliday}）` };
+    }
+    if (dayOfWeek === 6) {
+      return { type: 'WEEKEND', label: '📅 星期六（Weekend）' };
+    }
+    if (dayOfWeek === 0) {
+      return { type: 'WEEKEND', label: '📅 星期日（Weekend）' };
+    }
+
+    return null;
+  }, [selectedDate]);
   // 當切換檢視月份時，重新讀取該月份的數據
   useEffect(() => {
     fetchData();
@@ -415,6 +472,52 @@ export default function OtaDutyApp() {
 <div className="text-xs text-slate-500 mt-1">
     💡 只可選擇 【{defaultConfig.targetMonthNum}月份】（1號至 {activeMonthConfig.daysInMonth}號）之內的日期。
   </div>
+  {/* 週末 / 公眾假期提醒標籤 */}
+  {holidayInfo && (
+    <div className={`mt-2 p-2.5 rounded-lg text-xs font-medium flex items-center gap-2 ${
+      holidayInfo.type === 'PH' 
+        ? 'bg-purple-50 text-purple-800 border border-purple-200' 
+        : 'bg-amber-50 text-amber-800 border border-amber-200'
+    }`}>
+      <span className="text-base">{holidayInfo.type === 'PH' ? '🚩' : '⚠️'}</span>
+      <div>
+        <span className="font-bold">{holidayInfo.label}</span>
+        <p className="text-[11px] opacity-80 mt-0.5">
+          {holidayInfo.type === 'PH' 
+            ? '提示：此日子為公眾假期，請注意假期 Request 規則。' 
+            : '提示：此日子為週末，請確認是否有輪值或 Request 限制。'}
+        </p>
+      </div>
+    </div>
+  )}
+
+  {/* 每日熱度統計卡片 */}
+  {selectedDate && selectedDateStats && (
+    <div className="mt-2 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-semibold text-slate-700">
+          📅 {selectedDate} 申請狀況：
+        </span>
+        <span className={`px-2 py-0.5 rounded-full font-bold ${
+          selectedDateStats.total >= 3 
+            ? 'bg-amber-100 text-amber-800' 
+            : 'bg-emerald-100 text-emerald-800'
+        }`}>
+          {selectedDateStats.total === 0 ? '目前無人申請' : `共 ${selectedDateStats.total} 人申請`}
+        </span>
+      </div>
+
+      {selectedDateStats.total > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {Object.entries(selectedDateStats.patterns).map(([pattern, count]) => (
+            <span key={pattern} className="bg-white border border-slate-200 px-2 py-1 rounded shadow-sm text-slate-600">
+              {pattern}: <strong className="text-slate-900">{count}</strong>人
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )}
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">選擇 Duty Pattern</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
