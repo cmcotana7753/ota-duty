@@ -34,6 +34,25 @@ const STAFF_LIST = [
   'Wong Hei Laam, Hazel'
 ];
 
+// 1. 完全不用出更/不派 Duty 的同事（DSC 及其他表外同事）
+const EXCLUDED_STAFF = [
+  'Ng Wai Hung Samuel', 
+  'Lam Ngan Sze Jessie',
+  // 如果你仲有另外每星期兩位 DSC 同事嘅全名，可以直接加喺度
+];
+
+// 2. 只可排 A 更且不計入核心人手的同事
+const ONLY_A_NO_COUNT_STAFF = [
+  'Lo Hiu Yu',
+  'Wong Hei Laam, Hazel'
+];
+
+// 3. 優先排 A 更的同事
+const PREFER_A_STAFF = [
+  'Tong Yiu Bun',
+  'Leung Ka Ki'
+];
+
 const DUTY_PATTERNS = [
   { id: '0800-1648', label: '0800-1648 (A)', mins: 528, hours: 8.8, desc: '平日>=6人, 假期/週末3人' },
   { id: '1000-1848', label: '1000-1848 (10點)', mins: 528, hours: 8.8, desc: '每日限 1 人' },
@@ -44,8 +63,8 @@ const DUTY_PATTERNS = [
   { id: 'CL', label: 'CL (恩恤假)', mins: 528, hours: 8.8, desc: '恩恤假' },
   { id: 'ML', label: 'ML (產假)', mins: 528, hours: 8.8, desc: '產假' },
   { id: '育嬰假', label: '育嬰假', mins: 528, hours: 8.8, desc: '育嬰假' },
-  { id: 'DO', label: 'DO (Day Off)', mins: 0, hours: 0, desc: 'Day Off (每月剛好4日)' },
-  { id: 'O', label: 'O (休假)', mins: 0, hours: 0, desc: '休假 (每週至少1日)' },
+  { id: 'DO', label: 'DO (Day Off)', mins: 0, hours: 0, desc: 'Day Off' },
+  { id: 'O', label: 'O (休假)', mins: 0, hours: 0, desc: '休假' },
 ];
 
 export default function OtaDutyApp() {
@@ -198,9 +217,9 @@ export default function OtaDutyApp() {
     return false;
   };
 
-  // 🤖 智能一鍵公平自動排更演算法 (加入每週至少 1 日 O 規則)
+  // 🤖 智能一鍵公平自動排更演算法 (完美閃避及處理特別安排)
   const handleSmartAutoSchedule = async () => {
-    if (!confirm(`🤖 確定要對 【${activeMonthConfig.year} 年 ${activeMonthConfig.monthNum} 月】 進行一鍵公平自動排更嗎？\n系統將自動填補空格、確保平日 A 班最少 6 人、每週每位同事至少 1 日 O、並補齊 4 日 DO。`)) {
+    if (!confirm(`🤖 確定要對 【${activeMonthConfig.year} 年 ${activeMonthConfig.monthNum} 月】 進行一鍵公平自動排更嗎？\n系統已自動略過 DSC 及表外同事，並嚴格遵守特許 A 更與每週 O 假規則！`)) {
       return;
     }
 
@@ -208,7 +227,11 @@ export default function OtaDutyApp() {
     let newMatrix = { ...matrixShifts };
     let upsertBatch: { staff_name: string; duty_date: string; pattern: string }[] = [];
 
+    // 略過完全不需出更的同事
+    const activeValidStaff = STAFF_LIST.filter(s => !EXCLUDED_STAFF.includes(s));
+
     requests.forEach(r => {
+      if (EXCLUDED_STAFF.includes(r.staff_name)) return;
       newMatrix[`${r.staff_name}-${r.request_date}`] = r.pattern;
       upsertBatch.push({ staff_name: r.staff_name, duty_date: r.request_date, pattern: r.pattern });
       if (r.pattern === 'AN') {
@@ -220,7 +243,7 @@ export default function OtaDutyApp() {
       }
     });
 
-    // 依每 7 日為一個星期區間 (Week chunks)
+    // 每週每位有效同事至少 1 日 O
     const weeks: number[][] = [];
     let currentWeek: number[] = [];
     activeMonthConfig.daysArray.forEach((day, idx) => {
@@ -231,9 +254,8 @@ export default function OtaDutyApp() {
       }
     });
 
-    // 針對每位同事，確保每星期至少有 1 日 O
-    STAFF_LIST.forEach(staff => {
-      weeks.forEach((weekDays, wIdx) => {
+    activeValidStaff.forEach(staff => {
+      weeks.forEach((weekDays) => {
         const hasOInWeek = weekDays.some(day => {
           const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
           const p = newMatrix[`${staff}-${dStr}`];
@@ -241,7 +263,6 @@ export default function OtaDutyApp() {
         });
 
         if (!hasOInWeek) {
-          // 在該星期中揀選一個未有更次的日子自動編排為 O
           for (const day of weekDays) {
             const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
             if (!newMatrix[`${staff}-${dStr}`] && !isAutoR(staff, dStr)) {
@@ -254,19 +275,23 @@ export default function OtaDutyApp() {
       });
     });
 
-    // 針對每一日進行公平編排
+    // 每日人手與更次分派
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
       const isHoliday = checkIsHolidayOrWeekend(dateStr);
       const minA = isHoliday ? 3 : 6;
       const targetP = isHoliday ? 1 : 2;
 
-      let currentA = STAFF_LIST.filter(s => newMatrix[`${s}-${dateStr}`] === '0800-1648').length;
-      let currentP = STAFF_LIST.filter(s => ['1300-2148', '1330-2218'].includes(newMatrix[`${s}-${dateStr}`])).length;
-      let currentAN = STAFF_LIST.filter(s => newMatrix[`${s}-${dateStr}`] === 'AN').length;
-      let current10 = STAFF_LIST.filter(s => newMatrix[`${s}-${dateStr}`] === '1000-1848').length;
+      // 只計算不包含「不計入人手」同事的 A 班人數
+      let currentA = activeValidStaff.filter(s => 
+        !ONLY_A_NO_COUNT_STAFF.includes(s) && newMatrix[`${s}-${dateStr}`] === '0800-1648'
+      ).length;
 
-      STAFF_LIST.forEach((staff, sIdx) => {
+      let currentP = activeValidStaff.filter(s => ['1300-2148', '1330-2218'].includes(newMatrix[`${s}-${dateStr}`])).length;
+      let currentAN = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === 'AN').length;
+      let current10 = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === '1000-1848').length;
+
+      activeValidStaff.forEach((staff, sIdx) => {
         const key = `${staff}-${dateStr}`;
         if (!newMatrix[key]) {
           if (isAutoR(staff, dateStr)) {
@@ -275,10 +300,17 @@ export default function OtaDutyApp() {
             return;
           }
 
-          if (current10 < 1 && (sIdx + day) % 23 === 3) {
+          // 規則 2 & 3：Lo Hiu Yu, Wong Hei Laam, Hazel 或優先 A 更同事，直接派 A 更
+          if (ONLY_A_NO_COUNT_STAFF.includes(staff) || PREFER_A_STAFF.includes(staff)) {
+            newMatrix[key] = '0800-1648';
+            if (!ONLY_A_NO_COUNT_STAFF.includes(staff)) currentA++;
+          }
+          // 10點班 (限 1 人，排除特許同事)
+          else if (current10 < 1 && (sIdx + day) % 23 === 3) {
             newMatrix[key] = '1000-1848';
             current10++;
           }
+          // AN 班 (限 1 人)
           else if (currentAN < 1 && (sIdx + day) % 23 === 7) {
             newMatrix[key] = 'AN';
             currentAN++;
@@ -288,10 +320,12 @@ export default function OtaDutyApp() {
               upsertBatch.push({ staff_name: staff, duty_date: nextD, pattern: 'R' });
             }
           }
+          // P 班
           else if (currentP < targetP) {
             newMatrix[key] = '1300-2148';
             currentP++;
           }
+          // A 班（補足最少人數）
           else if (currentA < minA) {
             newMatrix[key] = '0800-1648';
             currentA++;
@@ -304,8 +338,8 @@ export default function OtaDutyApp() {
       });
     });
 
-    // 確保每位同事剛好有 4 日 DO[cite: 1]
-    STAFF_LIST.forEach(staff => {
+    // 確保每位有效同事剛好有 4 日 DO
+    activeValidStaff.forEach(staff => {
       let doCount = activeMonthConfig.daysArray.filter(day => {
         const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
         return newMatrix[`${staff}-${dStr}`] === 'DO';
@@ -330,7 +364,7 @@ export default function OtaDutyApp() {
       alert('自動排更儲存失敗: ' + error.message);
     } else {
       setMatrixShifts(newMatrix);
-      setSuccessMsg('✨ 成功完成一鍵公平自動排更！每星期至少 1 日 O、平日 A 班最少 6 人及 4 日 DO 已全部完美安排！');
+      setSuccessMsg('✨ 成功完成一鍵公平自動排更！所有特別安排（DSC豁免、限A不計人手、優先A更）已完美過濾！');
       fetchData();
     }
     setIsAutoScheduling(false);
@@ -518,9 +552,22 @@ export default function OtaDutyApp() {
   const getDayPatternCount = (dateStr: string, patternId: string) => {
     let count = 0;
     STAFF_LIST.forEach(staff => {
+      if (EXCLUDED_STAFF.includes(staff)) return; // 略過 DSC
       let curP = matrixShifts[`${staff}-${dateStr}`] || 'O';
       if (isAutoR(staff, dateStr)) curP = 'R';
       if (curP === patternId) count++;
+    });
+    return count;
+  };
+
+  // 取得有效計算 A 班人手的人數 (不計入 ONLY_A_NO_COUNT_STAFF)
+  const getEffectiveACount = (dateStr: string) => {
+    let count = 0;
+    STAFF_LIST.forEach(staff => {
+      if (EXCLUDED_STAFF.includes(staff)) return;
+      if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return; // 不計入人手
+      let curP = matrixShifts[`${staff}-${dateStr}`] || 'O';
+      if (curP === '0800-1648') count++;
     });
     return count;
   };
@@ -1006,7 +1053,7 @@ export default function OtaDutyApp() {
                 <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Eye className="w-4 h-4 text-emerald-600" /> 【{activeMonthConfig.year} 年 {activeMonthConfig.monthNum} 月】預計更期與即時撞期監控
                 </h2>
-                <p className="text-[11px] text-slate-500 mt-0.5">A班規則：平日最少6人，週末/假期3人。P班：平日2人，假期1人。</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">A班規則：平日有效人手最少6人，週末/假期3人。P班：平日2人，假期1人。</p>
               </div>
             </div>
 
@@ -1042,10 +1089,10 @@ export default function OtaDutyApp() {
                             
                             const isHoliday = checkIsHolidayOrWeekend(dateStr);
                             const pCount = getDayPatternCount(dateStr, '1300-2148') + getDayPatternCount(dateStr, '1330-2218');
-                            const aCount = getDayPatternCount(dateStr, '0800-1648');
+                            const effectiveACount = getEffectiveACount(dateStr);
 
                             const isPOver = (currentVal === '1300-2148' || currentVal === '1330-2218') && ((!isHoliday && pCount !== 2) || (isHoliday && pCount !== 1));
-                            const isALack = currentVal === '0800-1648' && ((!isHoliday && aCount < 6) || (isHoliday && aCount < 3));
+                            const isALack = currentVal === '0800-1648' && !ONLY_A_NO_COUNT_STAFF.includes(staff) && ((!isHoliday && effectiveACount < 6) || (isHoliday && effectiveACount < 3));
 
                             const hasWarning = isAnOver || isMidOver || isPOver || isALack;
 
@@ -1085,7 +1132,7 @@ export default function OtaDutyApp() {
                 <h2 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <Edit3 className="w-4 h-4 text-emerald-600" /> 主管全月總覽與一鍵自動排更
                 </h2>
-                <p className="text-[11px] text-slate-500 mt-0.5">尊重同事 Request，自動補齊每週最少 1 日 O、A/P/AN/R 及 4 日 DO。</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">已自動略過 DSC 及表外同事，智能鎖定特許 A 更與每週 O 假。</p>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
