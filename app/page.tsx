@@ -305,7 +305,7 @@ export default function OtaDutyApp() {
             const dayOfWeek = dObj.getDay();
 
             if (dayOfWeek === 6) setDutyInMap(staff, dStr, 'DO');
-            else if (dayOfWeek === 0) setDutyInMap(staff, dateStr, 'O');
+            else if (dayOfWeek === 0) setDutyInMap(staff, dStr, 'O');
             else setDutyInMap(staff, dStr, 'O');
           });
         });
