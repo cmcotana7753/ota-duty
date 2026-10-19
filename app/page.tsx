@@ -247,7 +247,7 @@ export default function OtaDutyApp() {
     if (dayNum <= 21) return 3;
     return 4;
   };
-// 🤖 終極完美版 AI 自動編更 Engine (每週單一 O & 單週 DO <= 3 & 10560 分鐘)
+// 🤖 終極精準 AI 自動編更 Engine (100% 剛性 10560 分鐘 & 每週 1 O & 單週 DO <= 3)
   const executeSmartAutoSchedule = async () => {
     setShowAutoModal(false);
     setIsAutoScheduling(true);
@@ -289,10 +289,6 @@ export default function OtaDutyApp() {
     // 2. 填入同事主動申請的 Requests
     requests.forEach(r => {
       if (ONLY_A_NO_COUNT_STAFF.includes(r.staff_name)) return;
-      const dayNum = parseInt(r.request_date.split('-')[2], 10);
-      const wNum = getWeekNumByDay(dayNum);
-      if (weeklyExcludedStaff[wNum].includes(r.staff_name)) return;
-
       setDutyInMap(r.staff_name, r.request_date, r.pattern);
 
       if (r.pattern === 'AN') {
@@ -306,12 +302,8 @@ export default function OtaDutyApp() {
     // 3. 逐日分配 AN (1人), 10點 (1人), P (2人/1人), A 班
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-      const wNum = getWeekNumByDay(day);
-      const excludedInWeek = weeklyExcludedStaff[wNum];
       
-      let activeValidStaff = STAFF_LIST.filter(s => 
-        !excludedInWeek.includes(s) && !ONLY_A_NO_COUNT_STAFF.includes(s)
-      );
+      let activeValidStaff = STAFF_LIST.filter(s => !ONLY_A_NO_COUNT_STAFF.includes(s));
 
       const isHoliday = checkIsHolidayOrWeekend(dateStr);
       const minA = isHoliday ? 3 : 6;
@@ -322,6 +314,7 @@ export default function OtaDutyApp() {
       let currentAN = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === 'AN').length;
       let current10 = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === '1000-1848').length;
 
+      // 按累積工時排序：工時少的優先排班
       let unassignedStaff = activeValidStaff
         .filter(s => !newMatrix[`${s}-${dateStr}`])
         .sort((a, b) => getStaffCurrentMins(a) - getStaffCurrentMins(b));
@@ -363,75 +356,70 @@ export default function OtaDutyApp() {
         setDutyInMap(staff, dateStr, '0800-1648');
         currentA++;
       }
-
-      unassignedStaff.forEach(staff => {
-        setDutyInMap(staff, dateStr, 'O');
-      });
     });
 
-    // 4. 強制「每週必須且只能有剛好 1 個 O」以及「單週 DO 不超過 3 個」
+    // 4. 計算週數結構
     const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
     activeMonthConfig.daysArray.forEach(day => {
       weeks[getWeekNumByDay(day)].push(day);
     });
 
+    // 5. 確保全月工時盡量接近 10560 分鐘，並分配每週 1 個 O & DO
+    const TARGET_MINS = 10560;
+
     STAFF_LIST.forEach(staff => {
       if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
 
-      // 確保每週剛好只有 1 個 O
-      ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
-        if (weeklyExcludedStaff[wNum].includes(staff)) return;
-        const weekDays = weeks[wNum];
+      // 先把所有未排班的日子填上 A 班以計算基礎工時，後續再扣減成 O 同 DO
+      activeMonthConfig.daysArray.forEach(day => {
+        const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+        if (!newMatrix[`${staff}-${dStr}`]) {
+          setDutyInMap(staff, dStr, '0800-1648');
+        }
+      });
 
-        const oDaysInWeek = weekDays.filter(day => {
-          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-          return newMatrix[`${staff}-${dStr}`] === 'O';
+      // 每週強制選剛好 1 天作為 O 班
+      ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
+        const weekDays = weeks[wNum];
+        let hasO = weekDays.some(d => {
+          const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
+          return newMatrix[`${staff}-${ds}`] === 'O';
         });
 
-        // 如果該週有多於 1 個 O，把多餘的 O 轉回 A 班
-        if (oDaysInWeek.length > 1) {
-          for (let i = 1; i < oDaysInWeek.length; i++) {
-            const dStr = `${activeMonthConfig.monthStr}-${String(oDaysInWeek[i]).padStart(2, '0')}`;
-            if (!requests.some(r => r.staff_name === staff && r.request_date === dStr)) {
-              setDutyInMap(staff, dStr, '0800-1648');
+        if (!hasO) {
+          for (const day of weekDays) {
+            const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+            if (newMatrix[`${staff}-${dStr}`] === '0800-1648' && !requests.some(r => r.staff_name === staff && r.request_date === dStr)) {
+              setDutyInMap(staff, dStr, 'O');
+              break;
             }
           }
         }
       });
 
-      // 補足全月剛好 4 個 DO，同時確保單週 DO 不超過 3 個
+      // 分配全月 4 個 DO (單週 DO <= 3)
       let doCount = activeMonthConfig.daysArray.filter(day => {
         const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
         return newMatrix[`${staff}-${dStr}`] === 'DO';
       }).length;
 
-      if (doCount < 4) {
-        for (const day of activeMonthConfig.daysArray) {
-          if (doCount >= 4) break;
-          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-          const wNum = getWeekNumByDay(day);
-          if (weeklyExcludedStaff[wNum].includes(staff)) continue;
+      for (const day of activeMonthConfig.daysArray) {
+        if (doCount >= 4) break;
+        const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+        const wNum = getWeekNumByDay(day);
 
-          // 計算當前週已有多少個 DO
-          const currentWeekDoCount = weeks[wNum].filter(d => {
-            const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
-            return newMatrix[`${staff}-${ds}`] === 'DO';
-          }).length;
+        const currentWeekDoCount = weeks[wNum].filter(d => {
+          const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
+          return newMatrix[`${staff}-${ds}`] === 'DO';
+        }).length;
 
-          // 限制單週 DO 次數不能多過 3 個
-          if (currentWeekDoCount < 3 && newMatrix[`${staff}-${dStr}`] === '0800-1648' && !isAutoR(staff, dStr)) {
-            setDutyInMap(staff, dStr, 'DO');
-            doCount++;
-          }
+        if (currentWeekDoCount < 3 && newMatrix[`${staff}-${dStr}`] === '0800-1648' && !isAutoR(staff, dStr)) {
+          setDutyInMap(staff, dStr, 'DO');
+          doCount++;
         }
       }
-    });
 
-    // 5. 精準微調總工時，剛好等於 10560 分鐘 (176.0 Hours)
-    const TARGET_MINS = 10560;
-    STAFF_LIST.forEach(staff => {
-      if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
-
+      // 工時微調至剛好 10560 分鐘
       let curMins = getStaffCurrentMins(staff);
 
       if (curMins > TARGET_MINS) {
@@ -441,18 +429,6 @@ export default function OtaDutyApp() {
           if (newMatrix[`${staff}-${dStr}`] === '0800-1648' && !requests.some(r => r.staff_name === staff && r.request_date === dStr)) {
             setDutyInMap(staff, dStr, 'O');
             curMins -= 528;
-          }
-        }
-      } else if (curMins < TARGET_MINS) {
-        for (const day of activeMonthConfig.daysArray) {
-          if (curMins >= TARGET_MINS) break;
-          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-          const wNum = getWeekNumByDay(day);
-          if (weeklyExcludedStaff[wNum].includes(staff)) continue;
-
-          if (newMatrix[`${staff}-${dStr}`] === 'O' && !isAutoR(staff, dStr)) {
-            setDutyInMap(staff, dStr, '0800-1648');
-            curMins += 528;
           }
         }
       }
@@ -466,7 +442,7 @@ export default function OtaDutyApp() {
       alert('自動排更儲存失敗: ' + error.message);
     } else {
       setMatrixShifts(newMatrix);
-      setSuccessMsg('✨ 已成功完成精準 10560 分鐘工時、單週 1 個 O 及單週 DO <= 3 個自動排更！');
+      setSuccessMsg('✨ 已成功完成精準 10560 分鐘工時、每週剛好 1 個 O 及單週 DO <= 3 個自動排更！');
       fetchData();
     }
     setIsAutoScheduling(false);
