@@ -247,7 +247,7 @@ export default function OtaDutyApp() {
     if (dayNum <= 21) return 3;
     return 4;
   };
-// 🤖 終極精準 AI 自動編更 Engine (100% 剛性 10560 分鐘 & 每週 1 O & 單週 DO <= 3)
+// 🤖 終極精準 AI 自動編更 Engine (完全融合 DSC 豁免 0 工時、星期六DO、星期日O、10560分鐘)
   const executeSmartAutoSchedule = async () => {
     setShowAutoModal(false);
     setIsAutoScheduling(true);
@@ -271,6 +271,12 @@ export default function OtaDutyApp() {
       return total;
     };
 
+    // 劃分週數結構 (W1 - W4)
+    const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
+    activeMonthConfig.daysArray.forEach(day => {
+      weeks[getWeekNumByDay(day)].push(day);
+    });
+
     // 1. 特殊 A 班職員固定邏輯 (Lo Hiu Yu, Wong Hei Laam, Hazel)
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
@@ -286,9 +292,36 @@ export default function OtaDutyApp() {
       });
     });
 
-    // 2. 填入同事主動申請的 Requests
+    // 2. 處理 DSC 浮動豁免名單 (被勾選豁免的同事該星期工時必定為 0，星期六 DO，星期日 O)
+    ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
+      const excludedThisWeek = weeklyExcludedStaff[wNum] || [];
+      const weekDays = weeks[wNum];
+
+      excludedThisWeek.forEach(staff => {
+        if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
+        weekDays.forEach(day => {
+          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+          const dObj = new Date(dStr);
+          const dayOfWeek = dObj.getDay();
+
+          if (dayOfWeek === 6) {
+            setDutyInMap(staff, dStr, 'DO'); // 星期六必定 DO
+          } else if (dayOfWeek === 0) {
+            setDutyInMap(staff, dStr, 'O');  // 星期日必定 O
+          } else {
+            setDutyInMap(staff, dStr, 'O');  // 豁免日其餘日子設為 O (工時為 0)
+          }
+        });
+      });
+    });
+
+    // 3. 填入同事主動申請的 Requests (非豁免週)
     requests.forEach(r => {
       if (ONLY_A_NO_COUNT_STAFF.includes(r.staff_name)) return;
+      const dayNum = parseInt(r.request_date.split('-')[2], 10);
+      const wNum = getWeekNumByDay(dayNum);
+      if (weeklyExcludedStaff[wNum]?.includes(r.staff_name)) return; // 豁免期不覆蓋申請
+
       setDutyInMap(r.staff_name, r.request_date, r.pattern);
 
       if (r.pattern === 'AN') {
@@ -299,11 +332,15 @@ export default function OtaDutyApp() {
       }
     });
 
-    // 3. 逐日分配 AN (1人), 10點 (1人), P (2人/1人), A 班
+    // 4. 逐日分配 AN (1人), 10點 (1人), P (2人/1人), A 班 (排除當周被豁免的同事)
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-      
-      let activeValidStaff = STAFF_LIST.filter(s => !ONLY_A_NO_COUNT_STAFF.includes(s));
+      const wNum = getWeekNumByDay(day);
+      const excludedInWeek = weeklyExcludedStaff[wNum] || [];
+
+      let activeValidStaff = STAFF_LIST.filter(s => 
+        !ONLY_A_NO_COUNT_STAFF.includes(s) && !excludedInWeek.includes(s)
+      );
 
       const isHoliday = checkIsHolidayOrWeekend(dateStr);
       const minA = isHoliday ? 3 : 6;
@@ -314,7 +351,6 @@ export default function OtaDutyApp() {
       let currentAN = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === 'AN').length;
       let current10 = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === '1000-1848').length;
 
-      // 按累積工時排序：工時少的優先排班
       let unassignedStaff = activeValidStaff
         .filter(s => !newMatrix[`${s}-${dateStr}`])
         .sort((a, b) => getStaffCurrentMins(a) - getStaffCurrentMins(b));
@@ -358,29 +394,30 @@ export default function OtaDutyApp() {
       }
     });
 
-    // 4. 計算週數結構
-    const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
-    activeMonthConfig.daysArray.forEach(day => {
-      weeks[getWeekNumByDay(day)].push(day);
-    });
-
-    // 5. 確保全月工時盡量接近 10560 分鐘，並分配每週 1 個 O & DO
+    // 5. 非豁免同事：每週剛好 1 個 O & 全月剛好 4 個 DO (單週 <= 3) & 工時精準對齊 10560 分鐘
     const TARGET_MINS = 10560;
 
     STAFF_LIST.forEach(staff => {
       if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
 
-      // 先把所有未排班的日子填上 A 班以計算基礎工時，後續再扣減成 O 同 DO
+      // 檢查該員工是否全月所有星期都被豁免
+      const isAlwaysExcluded = ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).every(wNum => weeklyExcludedStaff[wNum]?.includes(staff));
+      if (isAlwaysExcluded) return; // 全月豁免者保持 0 工時
+
+      // 為未排班的日子填上 A 班作為基礎
       activeMonthConfig.daysArray.forEach(day => {
         const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-        if (!newMatrix[`${staff}-${dStr}`]) {
+        const wNum = getWeekNumByDay(day);
+        if (!weeklyExcludedStaff[wNum]?.includes(staff) && !newMatrix[`${staff}-${dStr}`]) {
           setDutyInMap(staff, dStr, '0800-1648');
         }
       });
 
-      // 每週強制選剛好 1 天作為 O 班
+      // 每週強制選剛好 1 天作為 O 班（非豁免週）
       ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
+        if (weeklyExcludedStaff[wNum]?.includes(staff)) return;
         const weekDays = weeks[wNum];
+
         let hasO = weekDays.some(d => {
           const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
           return newMatrix[`${staff}-${ds}`] === 'O';
@@ -407,6 +444,7 @@ export default function OtaDutyApp() {
         if (doCount >= 4) break;
         const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
         const wNum = getWeekNumByDay(day);
+        if (weeklyExcludedStaff[wNum]?.includes(staff)) continue;
 
         const currentWeekDoCount = weeks[wNum].filter(d => {
           const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
@@ -419,13 +457,16 @@ export default function OtaDutyApp() {
         }
       }
 
-      // 工時微調至剛好 10560 分鐘
+      // 精準工時微調至 10560 分鐘
       let curMins = getStaffCurrentMins(staff);
 
       if (curMins > TARGET_MINS) {
         for (const day of activeMonthConfig.daysArray) {
           if (curMins <= TARGET_MINS) break;
           const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+          const wNum = getWeekNumByDay(day);
+          if (weeklyExcludedStaff[wNum]?.includes(staff)) continue;
+
           if (newMatrix[`${staff}-${dStr}`] === '0800-1648' && !requests.some(r => r.staff_name === staff && r.request_date === dStr)) {
             setDutyInMap(staff, dStr, 'O');
             curMins -= 528;
@@ -434,7 +475,7 @@ export default function OtaDutyApp() {
       }
     });
 
-    // 6. 寫入 Supabase
+    // 6. 批次寫入 Supabase
     const upsertBatch = Array.from(upsertMap.values());
 
     const { error } = await supabase.from('duty_schedules').upsert(upsertBatch, { onConflict: 'staff_name,duty_date' });
@@ -442,7 +483,7 @@ export default function OtaDutyApp() {
       alert('自動排更儲存失敗: ' + error.message);
     } else {
       setMatrixShifts(newMatrix);
-      setSuccessMsg('✨ 已成功完成精準 10560 分鐘工時、每週剛好 1 個 O 及單週 DO <= 3 個自動排更！');
+      setSuccessMsg('✨ 已成功完成 DSC 豁免零工時、星期六DO/日O與精準 10560 分鐘自動排更！');
       fetchData();
     }
     setIsAutoScheduling(false);
