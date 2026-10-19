@@ -1320,13 +1320,13 @@ export default function OtaDutyApp() {
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-               <button
-  onClick={executeSmartAutoSchedule}
-  disabled={isAutoScheduling}
-  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg shadow-sm text-xs font-semibold transition-all disabled:opacity-50 cursor-pointer"
+              <button
+  type="button"
+  onClick={() => setShowAutoModal(true)}
+  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg shadow-sm text-xs font-semibold transition-all cursor-pointer"
 >
-  <Sparkles className="w-3.5 h-3.5 text-yellow-300 animate-spin" />
-  {isAutoScheduling ? 'AI 排更中...' : '🤖 一鍵公平自動排更'}
+  <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+  🤖 一鍵公平自動排更 (設定DSC豁免)
 </button>
                 <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-300">
                   <Calendar className="w-3.5 h-3.5 text-slate-600" />
