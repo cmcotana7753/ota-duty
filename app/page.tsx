@@ -247,273 +247,234 @@ export default function OtaDutyApp() {
     if (dayNum <= 21) return 3;
     return 4;
   };
-// 🤖 終極紅線版 AI 自動編更 Engine (嚴格限制：不論是否 Request，連續 DO 絕對不能多於 2 日)
+// 🤖 終極穩定版 AI 自動編更 Engine (絕對安全、防死循環、零崩潰)
   const executeSmartAutoSchedule = async () => {
     setShowAutoModal(false);
     setIsAutoScheduling(true);
 
-    let newMatrix = { ...matrixShifts };
-    const upsertMap = new Map<string, { staff_name: string; duty_date: string; pattern: string }>();
+    try {
+      let newMatrix = { ...matrixShifts };
+      const upsertMap = new Map<string, { staff_name: string; duty_date: string; pattern: string }>();
 
-    const setDutyInMap = (staff: string, dateStr: string, pattern: string) => {
-      newMatrix[`${staff}-${dateStr}`] = pattern;
-      upsertMap.set(`${staff}_${dateStr}`, { staff_name: staff, duty_date: dateStr, pattern });
-    };
+      const setDutyInMap = (staff: string, dateStr: string, pattern: string) => {
+        newMatrix[`${staff}-${dateStr}`] = pattern;
+        upsertMap.set(`${staff}_${dateStr}`, { staff_name: staff, duty_date: dateStr, pattern });
+      };
 
-    const getStaffCurrentMins = (staff: string) => {
-      let total = 0;
-      activeMonthConfig.daysArray.forEach(d => {
-        const dStr = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
-        const p = newMatrix[`${staff}-${dStr}`];
-        const pObj = DUTY_PATTERNS.find(item => item.id === p);
-        if (pObj) total += pObj.mins;
+      const getStaffCurrentMins = (staff: string) => {
+        let total = 0;
+        activeMonthConfig.daysArray.forEach(d => {
+          const dStr = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
+          const p = newMatrix[`${staff}-${dStr}`];
+          const pObj = DUTY_PATTERNS.find(item => item.id === p);
+          if (pObj) total += pObj.mins;
+        });
+        return total;
+      };
+
+      const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
+      activeMonthConfig.daysArray.forEach(day => {
+        weeks[getWeekNumByDay(day)].push(day);
       });
-      return total;
-    };
 
-    const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
-    activeMonthConfig.daysArray.forEach(day => {
-      weeks[getWeekNumByDay(day)].push(day);
-    });
+      // 1. 特殊 A 班職員固定邏輯 (Lo Hiu Yu, Wong Hei Laam, Hazel)
+      activeMonthConfig.daysArray.forEach(day => {
+        const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+        const dObj = new Date(dateStr);
+        const dayOfWeek = dObj.getDay(); 
+        const isPh = Boolean(publicHolidays[dateStr]);
 
-    // 1. 特殊 A 班職員固定邏輯 (Lo Hiu Yu, Wong Hei Laam, Hazel)
-    activeMonthConfig.daysArray.forEach(day => {
-      const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-      const dObj = new Date(dateStr);
-      const dayOfWeek = dObj.getDay(); 
-      const isPh = Boolean(publicHolidays[dateStr]);
-
-      ONLY_A_NO_COUNT_STAFF.forEach(staff => {
-        if (isPh) setDutyInMap(staff, dateStr, 'O');
-        else if (dayOfWeek === 6) setDutyInMap(staff, dateStr, 'DO');
-        else if (dayOfWeek === 0) setDutyInMap(staff, dateStr, 'O');
-        else setDutyInMap(staff, dateStr, '0800-1648');
-      });
-    });
-
-    // 2. 處理同仁主動申請的 Requests (檢查連續 DO 唔超過 2 日的紅線)
-    requests.forEach(r => {
-      if (ONLY_A_NO_COUNT_STAFF.includes(r.staff_name)) return;
-
-      // 如果是 Request DO，檢查前兩日是不是已經連續 2 個 DO/R
-      if (r.pattern === 'DO') {
-        const dayNum = parseInt(r.request_date.split('-')[2], 10);
-        const dayIdx = activeMonthConfig.daysArray.indexOf(dayNum);
-        
-        let consecutiveCount = 0;
-        if (dayIdx > 0) {
-          const prevD1 = `${activeMonthConfig.monthStr}-${String(activeMonthConfig.daysArray[dayIdx - 1]).padStart(2, '0')}`;
-          const prevP1 = newMatrix[`${r.staff_name}-${prevD1}`];
-          if (prevP1 === 'DO' || prevP1 === 'R') {
-            consecutiveCount++;
-            if (dayIdx > 1) {
-              const prevD2 = `${activeMonthConfig.monthStr}-${String(activeMonthConfig.daysArray[dayIdx - 2]).padStart(2, '0')}`;
-              const prevP2 = newMatrix[`${r.staff_name}-${prevD2}`];
-              if (prevP2 === 'DO' || prevP2 === 'R') {
-                consecutiveCount++;
-              }
-            }
-          }
-        }
-
-        // 如果已經連續 2 日或以上，則拒絕該 Request 夾 DO，改為正常配額
-        if (consecutiveCount >= 2) {
-          return; 
-        }
-      }
-
-      setDutyInMap(r.staff_name, r.request_date, r.pattern);
-
-      if (r.pattern === 'AN') {
-        const nextD = getNextDateStr(r.request_date);
-        if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
-          setDutyInMap(r.staff_name, nextD, 'R');
-        }
-      }
-    });
-
-    // 3. 逐日為正常同事分配：AN -> 10點班 -> P班 -> A班
-    activeMonthConfig.daysArray.forEach(day => {
-      const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-      const wNum = getWeekNumByDay(day);
-      const excludedInWeek = weeklyExcludedStaff[wNum] || [];
-
-      let activeValidStaff = STAFF_LIST.filter(s => 
-        !ONLY_A_NO_COUNT_STAFF.includes(s) && !excludedInWeek.includes(s)
-      );
-
-      const isHoliday = checkIsHolidayOrWeekend(dateStr);
-      const minA = isHoliday ? 3 : 6;
-      const targetP = isHoliday ? 1 : 2;
-
-      let currentA = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === '0800-1648').length;
-      let currentP = activeValidStaff.filter(s => ['1300-2148', '1330-2218'].includes(newMatrix[`${s}-${dateStr}`])).length;
-      let currentAN = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === 'AN').length;
-      let current10 = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === '1000-1848').length;
-
-      let unassignedStaff = activeValidStaff
-        .filter(s => !newMatrix[`${s}-${dateStr}`])
-        .sort((a, b) => getStaffCurrentMins(a) - getStaffCurrentMins(b));
-
-      // (A) AN 班 (每日 1 人，翌日 R)
-      if (currentAN < 1 && unassignedStaff.length > 0) {
-        const staff = unassignedStaff.shift()!;
-        setDutyInMap(staff, dateStr, 'AN');
-        const nextD = getNextDateStr(dateStr);
-        if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
-          setDutyInMap(staff, nextD, 'R');
-        }
-      }
-
-      // (B) 10 點班 (每日 1 人)
-      if (current10 < 1 && unassignedStaff.length > 0) {
-        const staff = unassignedStaff.shift()!;
-        setDutyInMap(staff, dateStr, '1000-1848');
-      }
-
-      // (C) P 班
-      while (currentP < targetP && unassignedStaff.length > 0) {
-        const staff = unassignedStaff.shift()!;
-        setDutyInMap(staff, dateStr, '1300-2148');
-        currentP++;
-      }
-
-      // (D) A 班
-      unassignedStaff = unassignedStaff.filter(s => !newMatrix[`${s}-${dateStr}`]);
-      while (currentA < minA && unassignedStaff.length > 0) {
-        const staff = unassignedStaff.shift()!;
-        setDutyInMap(staff, dateStr, '0800-1648');
-        currentA++;
-      }
-
-      // 剩餘工作天暫時填 A 班
-      unassignedStaff = unassignedStaff.filter(s => !newMatrix[`${s}-${dateStr}`]);
-      unassignedStaff.forEach(staff => {
-        setDutyInMap(staff, dateStr, '0800-1648');
-      });
-    });
-
-    // 4. 最後階段：處理 DSC 豁免、每週 1 個 O、全月 4 個 DO (嚴格遵守連續 DO 絕對 <= 2 日紅線)
-    ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
-      const excludedThisWeek = weeklyExcludedStaff[wNum] || [];
-      const weekDays = weeks[wNum];
-
-      excludedThisWeek.forEach(staff => {
-        if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
-        weekDays.forEach(day => {
-          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-          const dObj = new Date(dStr);
-          const dayOfWeek = dObj.getDay();
-
-          if (dayOfWeek === 6) setDutyInMap(staff, dStr, 'DO');
-          else if (dayOfWeek === 0) setDutyInMap(staff, dStr, 'O');
-          else setDutyInMap(staff, dStr, 'O');
+        ONLY_A_NO_COUNT_STAFF.forEach(staff => {
+          if (isPh) setDutyInMap(staff, dateStr, 'O');
+          else if (dayOfWeek === 6) setDutyInMap(staff, dateStr, 'DO');
+          else if (dayOfWeek === 0) setDutyInMap(staff, dateStr, 'O');
+          else setDutyInMap(staff, dateStr, '0800-1648');
         });
       });
-    });
 
-    const TARGET_MINS = 10560;
-
-    STAFF_LIST.forEach(staff => {
-      if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
-      const isAlwaysExcluded = ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).every(wNum => weeklyExcludedStaff[wNum]?.includes(staff));
-      if (isAlwaysExcluded) return;
-
-      // (A) 每週強制選剛好 1 天作為 O 班（非豁免週）
+      // 2. 處理 DSC 浮動豁免名單 (被勾選豁免的同事該星期星期六DO、星期日O、其餘O)
       ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
-        if (weeklyExcludedStaff[wNum]?.includes(staff)) return;
+        const excludedThisWeek = weeklyExcludedStaff[wNum] || [];
         const weekDays = weeks[wNum];
 
-        let hasO = weekDays.some(d => {
-          const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
-          return newMatrix[`${staff}-${ds}`] === 'O';
-        });
-
-        if (!hasO) {
-          for (const day of weekDays) {
+        excludedThisWeek.forEach(staff => {
+          if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
+          weekDays.forEach(day => {
             const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-            const currentP = newMatrix[`${staff}-${dStr}`];
-            if (['0800-1648', '1000-1848', '1300-2148'].includes(currentP) && !requests.some(r => r.staff_name === staff && r.request_date === dStr)) {
-              setDutyInMap(staff, dStr, 'O');
-              break;
-            }
+            const dObj = new Date(dStr);
+            const dayOfWeek = dObj.getDay();
+
+            if (dayOfWeek === 6) setDutyInMap(staff, dStr, 'DO');
+            else if (dayOfWeek === 0) setDutyInMap(staff, dateStr, 'O');
+            else setDutyInMap(staff, dStr, 'O');
+          });
+        });
+      });
+
+      // 3. 填入同仁主動申請的 Requests
+      requests.forEach(r => {
+        if (ONLY_A_NO_COUNT_STAFF.includes(r.staff_name)) return;
+        const dayNum = parseInt(r.request_date.split('-')[2], 10);
+        const wNum = getWeekNumByDay(dayNum);
+        if (weeklyExcludedStaff[wNum]?.includes(r.staff_name)) return;
+
+        setDutyInMap(r.staff_name, r.request_date, r.pattern);
+
+        if (r.pattern === 'AN') {
+          const nextD = getNextDateStr(r.request_date);
+          if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
+            setDutyInMap(r.staff_name, nextD, 'R');
           }
         }
       });
 
-      // (B) 分配全月 4 個 DO (單週 <= 3，且檢查連續 DO 絕對不能 >= 2)
-      let doCount = activeMonthConfig.daysArray.filter(day => {
-        const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
-        return newMatrix[`${staff}-${dStr}`] === 'DO';
-      }).length;
-
-      for (let i = 0; i < activeMonthConfig.daysArray.length; i++) {
-        if (doCount >= 4) break;
-        const day = activeMonthConfig.daysArray[i];
-        const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+      // 4. 逐日為正常同事分配：AN -> 10點班 -> P班 -> A班
+      activeMonthConfig.daysArray.forEach(day => {
+        const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
         const wNum = getWeekNumByDay(day);
-        if (weeklyExcludedStaff[wNum]?.includes(staff)) continue;
+        const excludedInWeek = weeklyExcludedStaff[wNum] || [];
 
-        const currentWeekDoCount = weeks[wNum].filter(d => {
-          const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
-          return newMatrix[`${staff}-${ds}`] === 'DO';
-        }).length;
+        let activeValidStaff = STAFF_LIST.filter(s => 
+          !ONLY_A_NO_COUNT_STAFF.includes(s) && !excludedInWeek.includes(s)
+        );
 
-        const currentP = newMatrix[`${staff}-${dStr}`];
+        const isHoliday = checkIsHolidayOrWeekend(dateStr);
+        const minA = isHoliday ? 3 : 6;
+        const targetP = isHoliday ? 1 : 2;
 
-        // 檢查前兩日是否已經連續放 DO 或 R
-        let consecutiveRest = 0;
-        if (i > 0) {
-          const prevP1 = newMatrix[`${staff}-${activeMonthConfig.monthStr}-${String(activeMonthConfig.daysArray[i-1]).padStart(2, '0')}`];
-          if (prevP1 === 'DO' || prevP1 === 'R') {
-            consecutiveRest++;
-            if (i > 1) {
-              const prevP2 = newMatrix[`${staff}-${activeMonthConfig.monthStr}-${String(activeMonthConfig.daysArray[i-2]).padStart(2, '0')}`];
-              if (prevP2 === 'DO' || prevP2 === 'R') {
-                consecutiveRest++;
-              }
-            }
+        let currentA = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === '0800-1648').length;
+        let currentP = activeValidStaff.filter(s => ['1300-2148', '1330-2218'].includes(newMatrix[`${s}-${dateStr}`])).length;
+        let currentAN = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === 'AN').length;
+        let current10 = activeValidStaff.filter(s => newMatrix[`${s}-${dateStr}`] === '1000-1848').length;
+
+        let unassignedStaff = activeValidStaff
+          .filter(s => !newMatrix[`${s}-${dateStr}`])
+          .sort((a, b) => getStaffCurrentMins(a) - getStaffCurrentMins(b));
+
+        // (A) AN 班 (每日 1 人，翌日 R)
+        if (currentAN < 1 && unassignedStaff.length > 0) {
+          const staff = unassignedStaff.shift()!;
+          setDutyInMap(staff, dateStr, 'AN');
+          const nextD = getNextDateStr(dateStr);
+          if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
+            setDutyInMap(staff, nextD, 'R');
           }
         }
 
-        if (currentWeekDoCount < 3 && currentP === '0800-1648' && consecutiveRest < 2 && !isAutoR(staff, dStr)) {
-          setDutyInMap(staff, dStr, 'DO');
-          doCount++;
+        // (B) 10 點班 (每日 1 人)
+        if (current10 < 1 && unassignedStaff.length > 0) {
+          const staff = unassignedStaff.shift()!;
+          setDutyInMap(staff, dateStr, '1000-1848');
         }
-      }
 
-      // (C) 精準工時微調至剛好 10560 分鐘
-      let curMins = getStaffCurrentMins(staff);
+        // (C) P 班
+        while (currentP < targetP && unassignedStaff.length > 0) {
+          const staff = unassignedStaff.shift()!;
+          setDutyInMap(staff, dateStr, '1300-2148');
+          currentP++;
+        }
 
-      if (curMins > TARGET_MINS) {
-        for (const day of activeMonthConfig.daysArray) {
-          if (curMins <= TARGET_MINS) break;
+        // (D) A 班
+        unassignedStaff = unassignedStaff.filter(s => !newMatrix[`${s}-${dateStr}`]);
+        while (currentA < minA && unassignedStaff.length > 0) {
+          const staff = unassignedStaff.shift()!;
+          setDutyInMap(staff, dateStr, '0800-1648');
+          currentA++;
+        }
+
+        // 剩餘工作天暫時填 A 班
+        unassignedStaff = unassignedStaff.filter(s => !newMatrix[`${s}-${dateStr}`]);
+        unassignedStaff.forEach(staff => {
+          setDutyInMap(staff, dateStr, '0800-1648');
+        });
+      });
+
+      // 5. 非豁免同事：每週 1 個 O、全月 4 個 DO (連續 DO <= 2)
+      STAFF_LIST.forEach(staff => {
+        if (ONLY_A_NO_COUNT_STAFF.includes(staff)) return;
+        const isAlwaysExcluded = ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).every(wNum => weeklyExcludedStaff[wNum]?.includes(staff));
+        if (isAlwaysExcluded) return;
+
+        // (A) 每週強制選剛好 1 天作為 O 班（非豁免週）
+        ([1, 2, 3, 4] as (1 | 2 | 3 | 4)[]).forEach(wNum => {
+          if (weeklyExcludedStaff[wNum]?.includes(staff)) return;
+          const weekDays = weeks[wNum];
+
+          let hasO = weekDays.some(d => {
+            const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
+            return newMatrix[`${staff}-${ds}`] === 'O';
+          });
+
+          if (!hasO) {
+            for (const day of weekDays) {
+              const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+              const currentP = newMatrix[`${staff}-${dStr}`];
+              if (currentP === '0800-1648' && !requests.some(r => r.staff_name === staff && r.request_date === dStr)) {
+                setDutyInMap(staff, dStr, 'O');
+                break;
+              }
+            }
+          }
+        });
+
+        // (B) 分配全月 4 個 DO (單週 <= 3，連續 DO <= 2)
+        let doCount = activeMonthConfig.daysArray.filter(day => {
+          const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
+          return newMatrix[`${staff}-${dStr}`] === 'DO';
+        }).length;
+
+        for (let i = 0; i < activeMonthConfig.daysArray.length; i++) {
+          if (doCount >= 4) break;
+          const day = activeMonthConfig.daysArray[i];
           const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
           const wNum = getWeekNumByDay(day);
           if (weeklyExcludedStaff[wNum]?.includes(staff)) continue;
 
+          const currentWeekDoCount = weeks[wNum].filter(d => {
+            const ds = `${activeMonthConfig.monthStr}-${String(d).padStart(2, '0')}`;
+            return newMatrix[`${staff}-${ds}`] === 'DO';
+          }).length;
+
           const currentP = newMatrix[`${staff}-${dStr}`];
-          const isUserRequested = requests.some(r => r.staff_name === staff && r.request_date === dStr);
-          if (currentP === '0800-1648' && !isUserRequested) {
-            setDutyInMap(staff, dStr, 'O');
-            curMins -= 528;
+
+          // 檢查前兩日是否連續 DO 或 R
+          let consecutiveRest = 0;
+          if (i > 0) {
+            const prevP1 = newMatrix[`${staff}-${activeMonthConfig.monthStr}-${String(activeMonthConfig.daysArray[i-1]).padStart(2, '0')}`];
+            if (prevP1 === 'DO' || prevP1 === 'R') {
+              consecutiveRest++;
+              if (i > 1) {
+                const prevP2 = newMatrix[`${staff}-${activeMonthConfig.monthStr}-${String(activeMonthConfig.daysArray[i-2]).padStart(2, '0')}`];
+                if (prevP2 === 'DO' || prevP2 === 'R') {
+                  consecutiveRest++;
+                }
+              }
+            }
+          }
+
+          if (currentWeekDoCount < 3 && currentP === '0800-1648' && consecutiveRest < 2 && !isAutoR(staff, dStr)) {
+            setDutyInMap(staff, dStr, 'DO');
+            doCount++;
           }
         }
+      });
+
+      // 6. 批次寫入 Supabase
+      const upsertBatch = Array.from(upsertMap.values());
+
+      const { error } = await supabase.from('duty_schedules').upsert(upsertBatch, { onConflict: 'staff_name,duty_date' });
+      if (error) {
+        alert('自動排更儲存失敗: ' + error.message);
+      } else {
+        setMatrixShifts(newMatrix);
+        setSuccessMsg('✨ 自動編更成功完成！');
+        fetchData();
       }
-    });
-
-    // 5. 批次寫入 Supabase
-    const upsertBatch = Array.from(upsertMap.values());
-
-    const { error } = await supabase.from('duty_schedules').upsert(upsertBatch, { onConflict: 'staff_name,duty_date' });
-    if (error) {
-      alert('自動排更儲存失敗: ' + error.message);
-    } else {
-      setMatrixShifts(newMatrix);
-      setSuccessMsg('✨ 已成功完成自動排更（連續 DO 絕對不超過 2 日紅線已生效）！');
-      fetchData();
+    } catch (err: any) {
+      alert('自動編更發生錯誤: ' + (err.message || err));
+    } finally {
+      setIsAutoScheduling(false);
     }
-    setIsAutoScheduling(false);
   };
   const handleDateClick = (clickedDateStr: string) => {
     let maxDays = 1;
