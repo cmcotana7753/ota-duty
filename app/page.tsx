@@ -68,7 +68,7 @@ export default function OtaDutyApp() {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isAutoScheduling, setIsAutoScheduling] = useState(false);
 
-  // 🤖 按星期浮動豁免名單狀態 (Week 1, Week 2, Week 3, Week 4)
+  // 🤖 按星期浮動豁免名單狀態
   const [showAutoModal, setShowAutoModal] = useState(false);
   const [activeWeekTab, setActiveWeekTab] = useState<1 | 2 | 3 | 4>(1);
   const [weeklyExcludedStaff, setWeeklyExcludedStaff] = useState<Record<1 | 2 | 3 | 4, string[]>>({
@@ -88,9 +88,8 @@ export default function OtaDutyApp() {
   const [viewMonthStr, setViewMonthStr] = useState('2026-11');
   const [historyMonthOptions, setHistoryMonthOptions] = useState<{ label: string; value: string }[]>([]);
 
-  // 永續香港公眾假期對照表 (自動覆蓋 2026 至 2028 年，免手動更改)
+  // 永續香港公眾假期對照表
   const publicHolidays: Record<string, string> = {
-    // 2026 年
     '2026-01-01': '元旦',
     '2026-02-17': '農曆年初一',
     '2026-02-18': '農曆年初二',
@@ -107,8 +106,6 @@ export default function OtaDutyApp() {
     '2026-10-19': '重陽節',
     '2026-12-25': '聖誕節',
     '2026-12-26': '聖誕節後第一個周日',
-
-    // 2027 年 (自動支援，無需每年修改)
     '2027-01-01': '元旦',
     '2027-02-06': '農曆年初一',
     '2027-02-08': '農曆年初三',
@@ -125,25 +122,7 @@ export default function OtaDutyApp() {
     '2027-10-01': '國慶日',
     '2027-10-08': '重陽節',
     '2027-12-25': '聖誕節',
-    '2027-12-27': '聖誕節後第一個周日結連',
-
-    // 2028 年
-    '2028-01-03': '元旦翌日 (補假)',
-    '2028-01-26': '農曆年初一',
-    '2028-01-27': '農曆年初二',
-    '2028-01-28': '農曆年初三',
-    '2028-04-14': '耶穌受難節',
-    '2028-04-15': '耶穌受難節翌日',
-    '2028-04-17': '復活節星期一',
-    '2028-04-04': '清明節',
-    '2028-05-01': '勞動節',
-    '2028-05-02': '佛誕翌日',
-    '2028-05-29': '端午節',
-    '2028-07-01': '香港特別行政區成立紀念日',
-    '2028-10-02': '國慶日翌日',
-    '2028-10-06': '重陽節',
-    '2028-12-25': '聖誕節',
-    '2028-12-26': '聖誕節後第一個周日'
+    '2027-12-27': '聖誕節後第一個周日結連'
   };
 
   useEffect(() => {
@@ -152,7 +131,6 @@ export default function OtaDutyApp() {
     const currentMonth = today.getMonth(); 
     const currentDate = today.getDate();
 
-    // 自動預設為下一個月 (例如現在 10月，會自動開 11月)
     const targetDateObj = new Date(currentYear, currentMonth + 1, 1);
     const targetYear = targetDateObj.getFullYear();
     const targetMonthNum = targetDateObj.getMonth() + 1;
@@ -164,7 +142,6 @@ export default function OtaDutyApp() {
     setViewMonthStr(monthStr);
     setSelectedDate(`${monthStr}-01`);
 
-    // 動態產生過去 2 個月至未來 18 個月嘅下拉選單（自動跨年份，包括 2027, 2028...）
     const options = [];
     for (let i = -2; i < 18; i++) {
       const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
@@ -271,33 +248,42 @@ export default function OtaDutyApp() {
     return 4;
   };
 
+  // 🤖 修正版 AI 自動編更邏輯 (修復包含重複 Key 導致 Supabase Upsert 失敗問題)
   const executeSmartAutoSchedule = async () => {
     setShowAutoModal(false);
     setIsAutoScheduling(true);
 
     let newMatrix = { ...matrixShifts };
-    let upsertBatch: { staff_name: string; duty_date: string; pattern: string }[] = [];
+    // 使用 Map 確保每一位員工在每一天最多只留存一筆 Upsert 紀錄，防止 PostgreSQL ON CONFLICT 衝突報錯
+    const upsertMap = new Map<string, { staff_name: string; duty_date: string; pattern: string }>();
 
+    const setDutyInMap = (staff: string, dateStr: string, pattern: string) => {
+      newMatrix[`${staff}-${dateStr}`] = pattern;
+      upsertMap.set(`${staff}_${dateStr}`, { staff_name: staff, duty_date: dateStr, pattern });
+    };
+
+    // 1. 填入同仁主動申請的 Requests
     requests.forEach(r => {
       const dayNum = parseInt(r.request_date.split('-')[2], 10);
       const wNum = getWeekNumByDay(dayNum);
       if (weeklyExcludedStaff[wNum].includes(r.staff_name)) return;
 
-      newMatrix[`${r.staff_name}-${r.request_date}`] = r.pattern;
-      upsertBatch.push({ staff_name: r.staff_name, duty_date: r.request_date, pattern: r.pattern });
+      setDutyInMap(r.staff_name, r.request_date, r.pattern);
+
+      // 如果申請 AN 班，隔天強制鎖定為 REST (R)
       if (r.pattern === 'AN') {
         const nextD = getNextDateStr(r.request_date);
         if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
           const nextDayNum = parseInt(nextD.split('-')[2], 10);
           const nextWNum = getWeekNumByDay(nextDayNum);
           if (!weeklyExcludedStaff[nextWNum].includes(r.staff_name)) {
-            newMatrix[`${r.staff_name}-${nextD}`] = 'R';
-            upsertBatch.push({ staff_name: r.staff_name, duty_date: nextD, pattern: 'R' });
+            setDutyInMap(r.staff_name, nextD, 'R');
           }
         }
       }
     });
 
+    // 2. 按週確保每位非豁免同事每週至少有分配 O / DO 休假
     const weeks: Record<1 | 2 | 3 | 4, number[]> = { 1: [], 2: [], 3: [], 4: [] };
     activeMonthConfig.daysArray.forEach(day => {
       const wNum = getWeekNumByDay(day);
@@ -320,8 +306,7 @@ export default function OtaDutyApp() {
           for (const day of weekDays) {
             const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
             if (!newMatrix[`${staff}-${dStr}`] && !isAutoR(staff, dStr)) {
-              newMatrix[`${staff}-${dStr}`] = 'O';
-              upsertBatch.push({ staff_name: staff, duty_date: dStr, pattern: 'O' });
+              setDutyInMap(staff, dStr, 'O');
               break;
             }
           }
@@ -329,6 +314,7 @@ export default function OtaDutyApp() {
       });
     });
 
+    // 3. 逐日補齊所需班次人手 (A, P, AN, 10點班)
     activeMonthConfig.daysArray.forEach(day => {
       const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
       const wNum = getWeekNumByDay(day);
@@ -351,48 +337,46 @@ export default function OtaDutyApp() {
         const key = `${staff}-${dateStr}`;
         if (!newMatrix[key]) {
           if (isAutoR(staff, dateStr)) {
-            newMatrix[key] = 'R';
-            upsertBatch.push({ staff_name: staff, duty_date: dateStr, pattern: 'R' });
+            setDutyInMap(staff, dateStr, 'R');
             return;
           }
 
           if (ONLY_A_NO_COUNT_STAFF.includes(staff) || PREFER_A_STAFF.includes(staff)) {
-            newMatrix[key] = '0800-1648';
+            setDutyInMap(staff, dateStr, '0800-1648');
             if (!ONLY_A_NO_COUNT_STAFF.includes(staff)) currentA++;
           }
           else if (current10 < 1 && (sIdx + day) % 23 === 3) {
-            newMatrix[key] = '1000-1848';
+            setDutyInMap(staff, dateStr, '1000-1848');
             current10++;
           }
           else if (currentAN < 1 && (sIdx + day) % 23 === 7) {
-            newMatrix[key] = 'AN';
+            setDutyInMap(staff, dateStr, 'AN');
             currentAN++;
             const nextD = getNextDateStr(dateStr);
             if (nextD <= `${activeMonthConfig.monthStr}-${activeMonthConfig.daysInMonth}`) {
               const nextDayNum = parseInt(nextD.split('-')[2], 10);
               const nextWNum = getWeekNumByDay(nextDayNum);
               if (!weeklyExcludedStaff[nextWNum].includes(staff)) {
-                newMatrix[`${staff}-${nextD}`] = 'R';
-                upsertBatch.push({ staff_name: staff, duty_date: nextD, pattern: 'R' });
+                setDutyInMap(staff, nextD, 'R');
               }
             }
           }
           else if (currentP < targetP) {
-            newMatrix[key] = '1300-2148';
+            setDutyInMap(staff, dateStr, '1300-2148');
             currentP++;
           }
           else if (currentA < minA) {
-            newMatrix[key] = '0800-1648';
+            setDutyInMap(staff, dateStr, '0800-1648');
             currentA++;
           }
           else {
-            newMatrix[key] = 'O';
+            setDutyInMap(staff, dateStr, 'O');
           }
-          upsertBatch.push({ staff_name: staff, duty_date: dateStr, pattern: newMatrix[key] });
         }
       });
     });
 
+    // 4. 確保全月剛好有 4 天 DO (Day Off)
     STAFF_LIST.forEach(staff => {
       let doCount = activeMonthConfig.daysArray.filter(day => {
         const dStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
@@ -408,13 +392,15 @@ export default function OtaDutyApp() {
 
           const current = newMatrix[`${staff}-${dStr}`];
           if ((current === 'O' || !current) && !isAutoR(staff, dStr)) {
-            newMatrix[`${staff}-${dStr}`] = 'DO';
-            upsertBatch.push({ staff_name: staff, duty_date: dStr, pattern: 'DO' });
+            setDutyInMap(staff, dStr, 'DO');
             doCount++;
           }
         }
       }
     });
+
+    // 將 Map 轉為 Array 送給 Supabase
+    const upsertBatch = Array.from(upsertMap.values());
 
     const { error } = await supabase.from('duty_schedules').upsert(upsertBatch, { onConflict: 'staff_name,duty_date' });
     if (error) {
