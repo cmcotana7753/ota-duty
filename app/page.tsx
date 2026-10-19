@@ -91,7 +91,7 @@ export default function OtaDutyApp() {
   useEffect(() => {
     const today = new Date();
     const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
+    const currentMonth = today.getMonth(); 
     const currentDate = today.getDate();
 
     const targetDateObj = new Date(currentYear, currentMonth + 1, 1);
@@ -327,12 +327,8 @@ export default function OtaDutyApp() {
     return requests.some((r) => r.staff_name === staff && r.request_date === dateStr && r.pattern === pattern);
   };
 
-  const getCountForDay = (dict: Record<string, string>, dateStr: string, pattern: string) => {
-    return STAFF_LIST.filter((s) => dict[`${s}-${dateStr}`] === pattern).length;
-  };
-
   // ----------------------------------------------------------------------
-  // AI AUTO-SCHEDULING ALGORITHM ENGINE (Fixed & Enhanced)
+  // AI AUTO-SCHEDULING ALGORITHM ENGINE
   // ----------------------------------------------------------------------
   const handleAIGenerateSchedule = async () => {
     if (!isAdmin) return;
@@ -345,16 +341,14 @@ export default function OtaDutyApp() {
     try {
       const newSchedule: Record<string, string> = {};
 
-      // Step 1: Pre-fill approved Staff Requests & Leaves
       requests.forEach((req) => {
         newSchedule[`${req.staff_name}-${req.request_date}`] = req.pattern;
       });
 
-      // Step 2: Loop through every day of the month
       for (const day of activeMonthConfig.daysArray) {
         const dateStr = `${activeMonthConfig.monthStr}-${String(day).padStart(2, '0')}`;
         const dateObj = new Date(dateStr);
-        const dayOfWeek = dateObj.getDay();
+        const dayOfWeek = dateObj.getDay(); 
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
         const targetA = isWeekend ? 3 : 6;
@@ -368,21 +362,18 @@ export default function OtaDutyApp() {
         let availableStaff = STAFF_LIST.filter((s) => !assignedStaff.has(s));
         availableStaff = availableStaff.sort(() => Math.random() - 0.5);
 
-        // Assign AN
         let currentANCount = getCountForDay(newSchedule, dateStr, 'AN');
         if (currentANCount < targetAN && availableStaff.length > 0) {
           const staffForAN = availableStaff.pop()!;
           newSchedule[`${staffForAN}-${dateStr}`] = 'AN';
         }
 
-        // Assign 1000-1848
         let current10Count = getCountForDay(newSchedule, dateStr, '1000-1848');
         if (current10Count < target10 && availableStaff.length > 0) {
           const staffFor10 = availableStaff.pop()!;
           newSchedule[`${staffFor10}-${dateStr}`] = '1000-1848';
         }
 
-        // Assign P
         let currentPCount = getCountForDay(newSchedule, dateStr, '1330-2218');
         while (currentPCount < targetP && availableStaff.length > 0) {
           const staffForP = availableStaff.pop()!;
@@ -390,7 +381,6 @@ export default function OtaDutyApp() {
           currentPCount++;
         }
 
-        // Assign A
         let currentACount = getCountForDay(newSchedule, dateStr, '0800-1648');
         while (currentACount < targetA && availableStaff.length > 0) {
           const staffForA = availableStaff.pop()!;
@@ -403,7 +393,6 @@ export default function OtaDutyApp() {
         });
       }
 
-      // Step 3: Enforce DO Rule (Exactly 4 DOs per staff)
       STAFF_LIST.forEach((staff) => {
         let doCount = 0;
         activeMonthConfig.daysArray.forEach((day) => {
@@ -423,7 +412,6 @@ export default function OtaDutyApp() {
         }
       });
 
-      // Step 4: Batch Upsert into Supabase
       const payload: Array<{ staff_name: string; duty_date: string; pattern: string }> = [];
       Object.entries(newSchedule).forEach(([key, pattern]) => {
         const lastDash = key.lastIndexOf('-');
@@ -441,13 +429,16 @@ export default function OtaDutyApp() {
       if (batchErr) throw batchErr;
 
       setMatrixShifts(newSchedule);
-      alert('✨ AI 自動編更完成！全月更表已根據規則計算並成功儲存。');
-      fetchData();
+      alert('✨ AI 自動編更完成！全月更表已根據規則計算並上傳 Supabase。');
     } catch (err: any) {
       alert('AI 編更失敗: ' + err.message);
     } finally {
       setIsGeneratingAI(false);
     }
+  };
+
+  const getCountForDay = (dict: Record<string, string>, dateStr: string, pattern: string) => {
+    return STAFF_LIST.filter((s) => dict[`${s}-${dateStr}`] === pattern).length;
   };
 
   // CSV Export
@@ -491,17 +482,17 @@ export default function OtaDutyApp() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-slate-50 text-slate-900 pb-12">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
         <div className="max-w-[99%] mx-auto px-4 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xl">😎</span>
             <div>
-              <h1 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                OTA Duty Request <span className="text-[10px] font-normal px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">明愛 OT</span>
+              <h1 className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+                OTA Duty Request <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">明愛 OT</span>
               </h1>
-              <p className="text-[10px] text-slate-500">🔥 一切盡在呀SIR手中</p>
+              <p className="text-[10px] text-slate-500 font-medium">🔥 一切盡在呀SIR手中</p>
             </div>
           </div>
 
@@ -569,7 +560,7 @@ export default function OtaDutyApp() {
             <form onSubmit={handleAdminLogin} className="space-y-4">
               <input
                 type="password"
-                placeholder="請輸入主管密碼"
+                placeholder="請輸入密碼 (XXXXXXX)"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 text-sm"
